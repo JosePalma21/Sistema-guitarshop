@@ -1,0 +1,224 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model cliente {
+  id_cliente        Int       @id @default(autoincrement())
+  nombre            String    @db.VarChar(60)
+  cedula            String    @unique @db.VarChar(15)
+  correo            String    @unique @db.VarChar(60)
+  telefono          String    @db.VarChar(20)
+  direccion         String    @db.VarChar(100)
+  fecha             DateTime  @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime  @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  credito           credito[]
+  factura           factura[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model compra {
+  id_compra         Int               @id @default(autoincrement())
+  id_proveedor      Int
+  id_usuario        Int
+  fecha             DateTime          @default(now()) @db.Timestamptz(6)
+  total_compra      Decimal           @default(0) @db.Decimal(12, 2)
+  fecha_creacion    DateTime          @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  proveedor         proveedor         @relation(fields: [id_proveedor], references: [id_proveedor], onUpdate: Restrict, map: "fk_compra_proveedor")
+  usuario           usuario           @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_compra_usuario")
+  kardex            kardex[]
+  producto_compra   producto_compra[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model credito {
+  id_credito        Int      @id @default(autoincrement())
+  id_factura        Int
+  id_cuota          String   @db.VarChar(10)
+  id_cliente        Int
+  deuda             Decimal  @db.Decimal(12, 2)
+  fecha             DateTime @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  cliente           cliente  @relation(fields: [id_cliente], references: [id_cliente], onUpdate: Restrict, map: "fk_credito_cliente")
+  cuota             cuota    @relation(fields: [id_cuota], references: [id_cuota], onUpdate: Restrict, map: "fk_credito_cuota")
+  factura           factura  @relation(fields: [id_factura], references: [id_factura], onUpdate: Restrict, map: "fk_credito_factura")
+}
+
+model cuota {
+  id_cuota          String    @id @db.VarChar(10)
+  num_cuota         String    @db.VarChar(10)
+  fecha             DateTime  @db.Date
+  fecha_creacion    DateTime  @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  credito           credito[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model detalle_factura {
+  id_det_fact       Int      @id @default(autoincrement())
+  id_producto       Int
+  id_factura        Int
+  cant_producto     Int
+  precio_unitario   Decimal  @db.Decimal(12, 2)
+  precio_total      Decimal  @db.Decimal(12, 2)
+  fecha             DateTime @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  factura           factura  @relation(fields: [id_factura], references: [id_factura], onDelete: Cascade, onUpdate: Restrict, map: "fk_detalle_factura")
+  producto          producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_detalle_producto")
+
+  @@index([id_factura], map: "idx_det_factura")
+  @@index([id_producto], map: "idx_det_producto")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model factura {
+  id_factura        Int               @id @default(autoincrement())
+  id_cliente        Int?
+  id_usuario        Int
+  fecha             DateTime          @default(now()) @db.Timestamptz(6)
+  total_factura     Decimal           @default(0) @db.Decimal(12, 2)
+  fecha_creacion    DateTime          @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  credito           credito[]
+  detalle_factura   detalle_factura[]
+  cliente           cliente?          @relation(fields: [id_cliente], references: [id_cliente], onUpdate: Restrict, map: "fk_factura_cliente")
+  usuario           usuario           @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_factura_usuario")
+  kardex            kardex[]
+
+  @@index([id_cliente], map: "idx_factura_cliente")
+  @@index([id_usuario], map: "idx_factura_usuario")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model kardex {
+  id_kardex         Int      @id @default(autoincrement())
+  id_producto       Int
+  id_venta          Int?
+  id_compra         Int?
+  id_factura        Int?
+  tipo_movimiento   String   @db.VarChar(50)
+  ingreso           Decimal  @default(0) @db.Decimal(12, 2)
+  egreso            Decimal  @default(0) @db.Decimal(12, 2)
+  costo_unitario    Decimal  @db.Decimal(12, 2)
+  costo_total       Decimal  @db.Decimal(12, 2)
+  valor_movimiento  Decimal  @db.Decimal(12, 2)
+  fecha             DateTime @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  compra            compra?  @relation(fields: [id_compra], references: [id_compra], onUpdate: Restrict, map: "fk_kx_compra")
+  factura           factura? @relation(fields: [id_factura], references: [id_factura], onUpdate: Restrict, map: "fk_kx_factura")
+  producto          producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_kx_producto")
+  ventas            ventas?  @relation(fields: [id_venta], references: [id_venta], onUpdate: Restrict, map: "fk_kx_venta")
+
+  @@index([id_compra], map: "idx_kx_compra")
+  @@index([id_factura], map: "idx_kx_factura")
+  @@index([id_producto], map: "idx_kx_prod")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model producto {
+  id_producto       Int               @id @default(autoincrement())
+  id_proveedor      Int
+  nombre_producto   String            @db.VarChar(100)
+  descripcion       String?           @db.VarChar(255)
+  precio            Decimal           @db.Decimal(12, 2)
+  cantidad_stock    Int
+  foto              String?           @db.VarChar(254)
+  fecha             DateTime          @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime          @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  detalle_factura   detalle_factura[]
+  kardex            kardex[]
+  proveedor         proveedor         @relation(fields: [id_proveedor], references: [id_proveedor], onUpdate: Restrict, map: "fk_producto_proveedor")
+  producto_compra   producto_compra[]
+  producto_venta    producto_venta[]
+
+  @@index([id_proveedor], map: "idx_producto_prov")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model producto_compra {
+  id_producto     Int
+  id_compra       Int
+  cantidad_compra Int
+  costo_unitario  Decimal  @db.Decimal(12, 2)
+  subtotal        Decimal  @default(0) @db.Decimal(12, 2)
+  compra          compra   @relation(fields: [id_compra], references: [id_compra], onDelete: Cascade, onUpdate: Restrict, map: "fk_pc_compra")
+  producto        producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_pc_producto")
+
+  @@id([id_producto, id_compra])
+  @@index([id_compra], map: "idx_pc_compra")
+  @@index([id_producto], map: "idx_pc_producto")
+}
+
+model producto_venta {
+  id_producto Int
+  id_venta    Int
+  producto    producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_pv_producto")
+  ventas      ventas   @relation(fields: [id_venta], references: [id_venta], onDelete: Cascade, onUpdate: Restrict, map: "fk_pv_venta")
+
+  @@id([id_producto, id_venta])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model proveedor {
+  id_proveedor      Int        @id @default(autoincrement())
+  nombre_proveedor  String     @db.VarChar(100)
+  telefono          String     @db.VarChar(20)
+  correo            String     @unique @db.VarChar(60)
+  direccion         String     @db.VarChar(100)
+  fecha             DateTime   @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime   @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  compra            compra[]
+  producto          producto[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model usuario {
+  id_usuario        Int       @id @default(autoincrement())
+  nombre            String    @db.VarChar(60)
+  correo            String    @unique @db.VarChar(60)
+  telefono          String    @db.VarChar(20)
+  direccion         String    @db.VarChar(100)
+  cedula            String    @unique @db.VarChar(15)
+  contrasena        String    @db.VarChar(100)
+  fecha             DateTime  @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime  @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  compra            compra[]
+  factura           factura[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model ventas {
+  id_venta          Int              @id @default(autoincrement())
+  producto_vendido  String           @db.VarChar(100)
+  cantidad_vendida  Int
+  fecha             DateTime         @default(now()) @db.Timestamptz(6)
+  fecha_creacion    DateTime         @default(now()) @db.Timestamptz(6)
+  id_estado         Int
+  id_usuario_modifi Int?
+  kardex            kardex[]
+  producto_venta    producto_venta[]
+}
