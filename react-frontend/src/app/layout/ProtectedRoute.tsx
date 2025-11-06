@@ -1,3 +1,4 @@
+// src/app/layout/ProtectedRoute.tsx
 import { Navigate, Outlet } from "react-router-dom";
 
 export const ProtectedRoute = () => {
