@@ -1,74 +1,169 @@
+/* src/index.css */
+
+/* =========================================================
+   1. Tailwind Core Directives
+   =========================================================
+   Estas tres directivas importan los estilos base,
+   los componentes predefinidos y las utilidades
+   personalizables de Tailwind CSS.
+*/
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root { color-scheme: light; }
-
+/* =========================================================
+   2. Variables globales de color (modo claro/oscuro)
+   =========================================================
+   Permiten un diseño más elegante y adaptable.
+   Puedes cambiar el tema fácilmente editando estas variables.
+*/
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --color-bg: #f8fafc;       /* Fondo base: gris azulado muy claro */
+  --color-text: #1e293b;     /* Texto principal: gris azulado oscuro */
+  --color-card: #ffffff;     /* Tarjetas y secciones */
+  --color-border: #e2e8f0;   /* Líneas y divisores */
+  --color-primary: #059669;  /* Verde principal (Tailwind emerald-600) */
+  --color-accent: #10b981;   /* Verde acento (Tailwind emerald-500) */
+  --color-muted: #64748b;    /* Texto secundario */
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
-body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
-}
-
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
+/* 🌙 Modo oscuro opcional */
+@media (prefers-color-scheme: dark) {
   :root {
-    color: #213547;
-    background-color: #ffffff;
+    --color-bg: #0f172a;       /* Azul oscuro elegante */
+    --color-text: #f8fafc;     /* Texto claro */
+    --color-card: #1e293b;     /* Tarjetas más oscuras */
+    --color-border: #334155;   /* Bordes sutiles */
+    --color-primary: #10b981;  /* Verde brillante */
+    --color-accent: #34d399;
+    --color-muted: #94a3b8;
   }
-  a:hover {
-    color: #747bff;
+}
+
+/* =========================================================
+   3. Reset + Base Global Styles
+   ========================================================= */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* Tipografía y color general */
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* =========================================================
+   4. Scrollbar personalizada (solo desktop)
+   ========================================================= */
+@media (hover: hover) {
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
   }
-  button {
-    background-color: #f9f9f9;
+
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-border);
+    border-radius: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-muted);
+  }
+
+  ::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+}
+
+/* =========================================================
+   5. Componentes básicos reutilizables
+   ========================================================= */
+
+/* Contenedor general */
+.app-container {
+  @apply mx-auto max-w-7xl px-6 py-8;
+}
+
+/* Tarjeta base */
+.card {
+  background-color: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+  @apply p-6 transition-all duration-200;
+}
+
+.card:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+/* Botón base */
+.btn-primary {
+  background-color: var(--color-primary);
+  color: #fff;
+  font-weight: 600;
+  border-radius: 0.5rem;
+  @apply px-4 py-2 transition-all duration-200;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-accent);
+}
+
+/* Enlaces */
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* =========================================================
+   6. Ajustes de texto globales
+   ========================================================= */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: 0.5rem;
+}
+
+p {
+  color: var(--color-muted);
+}
+
+/* =========================================================
+   7. Animaciones suaves
+   ========================================================= */
+.fade-in {
+  animation: fadeIn 0.4s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }

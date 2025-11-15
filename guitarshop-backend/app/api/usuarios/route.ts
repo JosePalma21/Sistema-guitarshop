@@ -1,26 +1,48 @@
-import prisma from '../../../lib/prisma';
-import { NextResponse } from 'next/server';
+import { jsonCors, optionsCors } from "../../../lib/cors";
+import { verifyToken } from "../../../lib/auth";
+import {
+  getAllUsuarios,
+  createUsuario,
+  type UsuarioCreateInput,
+} from "../../../lib/services/usuarioService";
 
-export async function GET() {
-  const usuarios = await prisma.usuario.findMany();
-  return NextResponse.json(usuarios);
+// Preflight CORS
+export async function OPTIONS() {
+  return optionsCors();
 }
 
+// GET /api/usuarios  -> lista de usuarios (PROTEGIDO)
+export async function GET(request: Request) {
+  const validation = verifyToken(request);
+
+  if (!validation.valid) {
+    return jsonCors({ error: validation.message }, { status: 401 });
+  }
+
+  const usuarios = await getAllUsuarios();
+  return jsonCors(usuarios);
+}
+
+// POST /api/usuarios  -> crear nuevo usuario (también protegido)
 export async function POST(request: Request) {
-  const body = await request.json();
+  try {
+    const body = (await request.json()) as UsuarioCreateInput;
 
-  const nuevoUsuario = await prisma.usuario.create({
-    data: {
-      nombre: body.nombre,
-      correo: body.correo,
-      telefono: body.telefono,
-      direccion: body.direccion,
-      cedula: body.cedula,
-      contrasena: body.contrasena,
-      id_estado: body.id_estado,
-      id_usuario_modifi: body.id_usuario_modifi ?? null,
-    },
-  });
+    if (!body.contrasena || !body.correo) {
+      return jsonCors(
+        { message: "Correo y contraseña son obligatorios" },
+        { status: 400 }
+      );
+    }
 
-  return NextResponse.json(nuevoUsuario, { status: 201 });
+    const nuevoUsuario = await createUsuario(body);
+
+    return jsonCors(nuevoUsuario, { status: 201 });
+  } catch (error) {
+    console.error("Error POST /usuarios:", error);
+    return jsonCors(
+      { message: "Error al crear usuario", error: String(error) },
+      { status: 500 }
+    );
+  }
 }

@@ -1,57 +1,52 @@
-// guitarshop-backend/app/api/login/route.ts
-import { NextRequest } from "next/server";
-import prisma from "../../../lib/prisma";
-import jwt from "jsonwebtoken";
-import { jsonCors } from "../../../lib/cors";
+import { jsonCors, optionsCors } from "../../../lib/cors";
+import { loginUsuario } from "../../../lib/services/authService";
 
-export async function POST(req: NextRequest) {
-  try {
-    const { correo, contrasena } = await req.json();
+type LoginBody = {
+  email: string;
+  password: string;
+};
 
-    if (!correo || !contrasena) {
-      return jsonCors({ error: "Faltan credenciales" }, { status: 400 });
-    }
-
-    // Buscar usuario por correo
-    const usuario = await prisma.usuario.findFirst({
-      where: { correo: correo },
-    });
-
-    if (!usuario) {
-      return jsonCors({ error: "Usuario no encontrado" }, { status: 404 });
-    }
-
-    // Validar contraseña (sin hash por ahora)
-    if (usuario.contrasena !== contrasena) {
-      return jsonCors({ error: "Contraseña incorrecta" }, { status: 401 });
-    }
-
-    // Generar JWT
-    const token = jwt.sign(
-      {
-        id: usuario.id_usuario,
-        nombre: usuario.nombre,
-        correo: usuario.correo,
-      },
-      process.env.JWT_SECRET || "clave_dev_segura",
-      { expiresIn: "1h" }
-    );
-
-    return jsonCors({
-      mensaje: "Inicio de sesión exitoso",
-      usuario: {
-        id_usuario: usuario.id_usuario,
-        nombre: usuario.nombre,
-        correo: usuario.correo,
-      },
-      token,
-    });
-  } catch (error) {
-    console.error("Error en /api/login:", error);
-    return jsonCors({ error: "Error interno" }, { status: 500 });
-  }
+// Handler para el preflight CORS (OPTIONS)
+export async function OPTIONS() {
+  return optionsCors();
 }
 
-export async function OPTIONS() {
-  return jsonCors({});
+export async function POST(request: Request) {
+  try {
+    const body: LoginBody = await request.json();
+    const { email, password } = body;
+
+    if (!email || !password) {
+      return jsonCors(
+        { error: "Email y contraseña son obligatorios" },
+        { status: 400 }
+      );
+    }
+
+    // Usamos el service de autenticación
+    const result = await loginUsuario(email, password);
+
+    // Si result es null → credenciales inválidas
+    if (!result) {
+      return jsonCors(
+        { error: "Credenciales inválidas" },
+        { status: 401 }
+      );
+    }
+
+    return jsonCors(
+      {
+        message: "Login correcto",
+        token: result.token,
+        usuario: result.usuario,
+      },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error("Error en /api/login:", error);
+    return jsonCors(
+      { error: "Error interno del servidor" },
+      { status: 500 }
+    );
+  }
 }

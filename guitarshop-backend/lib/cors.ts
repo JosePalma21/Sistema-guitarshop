@@ -1,12 +1,11 @@
 // guitarshop-backend/lib/cors.ts
 import { NextResponse } from "next/server";
 
-export function jsonCors(body: any, init?: ResponseInit) {
-  const res = NextResponse.json(body, init);
-  res.headers.set(
-    "Access-Control-Allow-Origin",
-    process.env.CORS_ORIGIN ?? "http://localhost:5173"
-  );
+const ALLOWED_ORIGIN =
+  process.env.CORS_ORIGIN ?? "http://localhost:5173";
+
+function setCorsHeaders(res: NextResponse) {
+  res.headers.set("Access-Control-Allow-Origin", ALLOWED_ORIGIN);
   res.headers.set(
     "Access-Control-Allow-Methods",
     "GET, POST, PUT, DELETE, OPTIONS"
@@ -15,5 +14,16 @@ export function jsonCors(body: any, init?: ResponseInit) {
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization"
   );
+  res.headers.set("Access-Control-Allow-Credentials", "true");
   return res;
+}
+
+export function jsonCors(body: any, init?: ResponseInit) {
+  const res = NextResponse.json(body, init);
+  return setCorsHeaders(res);
+}
+
+export function optionsCors() {
+  const res = new NextResponse(null, { status: 204 });
+  return setCorsHeaders(res);
 }
