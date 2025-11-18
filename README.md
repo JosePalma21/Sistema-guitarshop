@@ -132,7 +132,7 @@ Las tablas principales son:
 
 | Nombre             | Rol                            |
 | ------------------ | ------------------------------ |
-| Euclides Anchundia | Líder de Repositorio / Backend |
+| Euclides Anchundia | Líder de Repositorio           |
 | Alayn Macias       | ...                            |
 | Luis Macias        | ...                            |
 | Samuel Macias      | ...                            |
