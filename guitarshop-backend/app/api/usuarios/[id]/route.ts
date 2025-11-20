@@ -26,7 +26,7 @@ function getIdFromUrl(req: Request): number | null {
 export async function GET(req: Request) {
   const validation = verifyToken(req); // Confirma que el cliente envía un token válido.
   if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
   }
 
   const id = getIdFromUrl(req); // Convertimos el segmento final de la URL en ID numérico.
@@ -55,7 +55,7 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   const validation = verifyToken(req); // Reutilizamos la validación del token antes de permitir cambios.
   if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
   }
 
   const id = getIdFromUrl(req); // Determina qué usuario se pretende modificar.
@@ -82,7 +82,7 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   const validation = verifyToken(req); // Protección para evitar borrados sin autenticación.
   if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
   }
 
   const id = getIdFromUrl(req); // Identifica al usuario que se eliminará.

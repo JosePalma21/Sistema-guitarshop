@@ -13,13 +13,19 @@ export async function GET(request: Request) {
   const validation = verifyToken(request);
 
   if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
   }
 
   try {
-    const productos = await prisma.producto.findMany({
+    const productosDB = await prisma.producto.findMany({
       orderBy: { id_producto: "asc" },
     });
+
+    // Convertimos Decimal -> number
+    const productos = productosDB.map((p) => ({
+      ...p,
+      precio: Number(p.precio),
+    }));
 
     return jsonCors(productos);
   } catch (error) {
@@ -36,7 +42,7 @@ export async function POST(request: Request) {
   const validation = verifyToken(request);
 
   if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
   }
 
   try {
@@ -63,7 +69,7 @@ export async function POST(request: Request) {
         id_proveedor: Number(body.id_proveedor),
         nombre_producto: String(body.nombre_producto),
         descripcion: body.descripcion ?? null,
-        precio: body.precio,
+        precio: Number(body.precio), // 🔥 CORREGIDO
         cantidad_stock: Number(body.cantidad_stock),
         foto: body.foto ?? null,
         fecha: body.fecha ? new Date(body.fecha) : now,
@@ -75,7 +81,12 @@ export async function POST(request: Request) {
       },
     });
 
-    return jsonCors(nuevoProducto, { status: 201 });
+    // Convertimos antes de enviar al frontend
+    return jsonCors(
+      { ...nuevoProducto, precio: Number(nuevoProducto.precio) },
+      { status: 201 }
+    );
+
   } catch (error) {
     console.error("Error POST /productos:", error);
     return jsonCors(

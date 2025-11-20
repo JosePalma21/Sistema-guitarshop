@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api } from "../../lib/apiClient"; // Cliente Axios preconfigurado con URL base y headers.
+import { api } from "../../lib/apiClient";
 
 // Tipo que esperamos desde /api/usuarios
 interface UsuarioDashboard {
@@ -12,9 +12,9 @@ interface UsuarioDashboard {
 }
 
 export default function Dashboard() {
-  const [usuarios, setUsuarios] = useState<UsuarioDashboard[]>([]); // Estado con la lista recibida desde el backend.
-  const [loading, setLoading] = useState<boolean>(false); // Indicador de carga mientras se espera la respuesta.
-  const [error, setError] = useState<string | null>(null); // Mensaje de error si falla la petición.
+  const [usuarios, setUsuarios] = useState<UsuarioDashboard[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUsuarios = async () => {
@@ -23,7 +23,7 @@ export default function Dashboard() {
         setError(null);
 
         // Esta ruta está protegida con JWT en el backend
-        const res = await api.get<UsuarioDashboard[]>("/usuarios"); // Consulta al endpoint para obtener usuarios recientes.
+        const res = await api.get<UsuarioDashboard[]>("/usuarios");
         setUsuarios(res.data);
       } catch (err) {
         console.error(err);
@@ -39,6 +39,7 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6">
+        
         {/* Header principal del panel */}
         <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -51,7 +52,7 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* Estados globales: carga/errores */}
+        {/* Estados globales */}
         {loading && (
           <p className="text-sm text-slate-600">Cargando información...</p>
         )}
@@ -77,7 +78,6 @@ export default function Dashboard() {
               </p>
             </div>
 
-            {/* Aquí luego puedes agregar más tarjetas: ventas, productos, etc. */}
             <div className="rounded-xl bg-slate-50 border border-dashed border-slate-200 p-4 text-xs text-slate-400 flex items-center justify-center">
               Próxima métrica (ventas, inventario…)
             </div>
@@ -101,6 +101,7 @@ export default function Dashboard() {
                 Lista de usuarios registrados en el sistema.
               </p>
             </div>
+
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50">
@@ -119,6 +120,7 @@ export default function Dashboard() {
                     </th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {usuarios.map((u) => (
                     <tr key={u.id_usuario} className="border-t border-slate-100">
@@ -137,12 +139,13 @@ export default function Dashboard() {
                     </tr>
                   ))}
                 </tbody>
+
               </table>
             </div>
           </section>
         )}
 
-        {/* Estado vacío cuando no hay usuarios */}
+        {/* Estado vacío */}
         {!loading && !error && usuarios.length === 0 && (
           <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-10 text-center text-sm text-slate-500">
             <p className="font-medium text-slate-700">
@@ -153,6 +156,7 @@ export default function Dashboard() {
             </p>
           </section>
         )}
+
       </div>
     </div>
   );

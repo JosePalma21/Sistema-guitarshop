@@ -23,10 +23,10 @@ export async function OPTIONS() {
 // GET /api/producto-compra/:id_compra/:id_producto
 export async function GET(req: Request) {
   const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.message }, { status: 401 });
+  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
 
   const ids = getIdsFromUrl(req);
-  if (!ids) return jsonCors({ message: "IDs inválidos" }, { status: 400 });
+  if (ids == null) return jsonCors({ message: "IDs inválidos" }, { status: 400 });
 
   const detalle = await getProductoCompra(ids);
   if (!detalle)
@@ -38,10 +38,10 @@ export async function GET(req: Request) {
 // PUT /api/producto-compra/:id_compra/:id_producto
 export async function PUT(req: Request) {
   const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.message }, { status: 401 });
+  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
 
   const ids = getIdsFromUrl(req);
-  if (!ids) return jsonCors({ message: "IDs inválidos" }, { status: 400 });
+  if (ids == null) return jsonCors({ message: "IDs inválidos" }, { status: 400 });
 
   try {
     const body = await req.json();
@@ -76,10 +76,10 @@ export async function PUT(req: Request) {
 // DELETE /api/producto-compra/:id_compra/:id_producto
 export async function DELETE(req: Request) {
   const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.message }, { status: 401 });
+  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
 
   const ids = getIdsFromUrl(req);
-  if (!ids) return jsonCors({ message: "IDs inválidos" }, { status: 400 });
+  if (ids == null) return jsonCors({ message: "IDs inválidos" }, { status: 400 });
 
   try {
     await deleteProductoCompra(ids);

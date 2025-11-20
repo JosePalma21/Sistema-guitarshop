@@ -12,7 +12,7 @@ export async function OPTIONS() {
 // GET /api/producto-compra?id_compra=1  (opcional filtro)
 export async function GET(req: Request) {
   const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.message }, { status: 401 });
+  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
 
   const url = new URL(req.url);
   const idCompraParam = url.searchParams.get("id_compra");
@@ -25,7 +25,7 @@ export async function GET(req: Request) {
 // POST /api/producto-compra
 export async function POST(req: Request) {
   const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.message }, { status: 401 });
+  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
 
   try {
     const body = await req.json();

@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const validation = verifyToken(request); // Extraemos y verificamos el token desde las cabeceras.
 
   if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
   }
 
   const usuarios = await getAllUsuarios(); // Servicio que consulta todos los usuarios en la base de datos.

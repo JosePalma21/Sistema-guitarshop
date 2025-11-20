@@ -14,7 +14,7 @@ export async function OPTIONS() {
 // GET /api/compra
 export async function GET(req: Request) {
   const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.message }, { status: 401 });
+  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
 
   const compras = await getAllCompras();
   return jsonCors(compras);

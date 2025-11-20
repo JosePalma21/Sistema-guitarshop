@@ -1,18 +1,40 @@
-import jwt from 'jsonwebtoken';
+import jwt from "jsonwebtoken";
 
-export function verifyToken(req: Request) {
-  const authHeader = req.headers.get("authorization");
+const JWT_SECRET = process.env.JWT_SECRET || "guitar_123";
+
+export interface JwtPayload {
+  id: number;
+  correo: string;
+  iat: number;
+  exp: number;
+}
+
+export function verifyToken(req: Request): {
+  valid: boolean;
+  payload?: JwtPayload;
+  error?: string;
+} {
+  const authHeader =
+    req.headers.get("authorization") || req.headers.get("Authorization");
 
   if (!authHeader) {
-    return { valid: false, message: "Token no enviado" };
+    return { valid: false, error: "Token no enviado" };
   }
 
-  const token = authHeader.split(" ")[1]; // "Bearer token"
+  const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!);
-    return { valid: true, decoded };
-  } catch (error) {
-    return { valid: false, message: "Token inválido o expirado" };
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+
+    return {
+      valid: true,
+      payload: decoded,
+    };
+  } catch (err: any) {
+    if (err.name === "TokenExpiredError") {
+      return { valid: false, error: "Token expirado" };
+    }
+
+    return { valid: false, error: "Token inválido" };
   }
 }

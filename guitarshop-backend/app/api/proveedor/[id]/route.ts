@@ -22,10 +22,10 @@ export async function OPTIONS() {
 export async function GET(req: Request) {
   const validation = verifyToken(req);
   if (!validation.valid)
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
 
   const id = getId(req);
-  if (!id) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
 
   const prov = await getProveedorById(id);
   if (!prov) return jsonCors({ message: "Proveedor no encontrado" }, { status: 404 });
@@ -37,10 +37,10 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   const validation = verifyToken(req);
   if (!validation.valid)
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
 
   const id = getId(req);
-  if (!id) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
 
   const body = (await req.json()) as Partial<ProveedorCreateInput>;
 
@@ -52,10 +52,10 @@ export async function PUT(req: Request) {
 export async function DELETE(req: Request) {
   const validation = verifyToken(req);
   if (!validation.valid)
-    return jsonCors({ error: validation.message }, { status: 401 });
+    return jsonCors({ error: validation.error }, { status: 401 });
 
   const id = getId(req);
-  if (!id) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
 
   const eliminado = await deleteProveedor(id);
   return jsonCors(eliminado);

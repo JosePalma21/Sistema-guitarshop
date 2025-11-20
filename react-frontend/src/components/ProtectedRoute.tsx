@@ -1,13 +1,30 @@
-import type { ReactNode } from "react"; // Tipado para declarar que el componente recibirá nodos React como hijos.
+import { Navigate, Outlet } from "react-router-dom";
 
-export default function ProtectedRoute({ children }: { children: ReactNode }) {
-  const token = localStorage.getItem("auth_token"); // Se consulta el token persistido luego del login.
+export default function ProtectedRoute() {
+  const token = localStorage.getItem("auth_token");
 
+  // Si NO hay token → login inmediato
   if (!token) {
-    // Si no existe token, redirigimos manualmente hacia la pantalla de acceso.
-    window.location.href = "/login";
-    return null;
+    return <Navigate to="/login" replace />;
   }
 
-  return <>{children}</>; // Con token válido, renderizamos los componentes protegidos.
+  // Validar expiración del token
+  try {
+    const payloadBase64 = token.split(".")[1];
+    const payload = JSON.parse(atob(payloadBase64));
+    const now = Date.now() / 1000;
+
+    if (payload.exp < now) {
+      // Token expirado
+      localStorage.removeItem("auth_token");
+      return <Navigate to="/login" replace />;
+    }
+  } catch (err) {
+    // Token inválido o roto
+    localStorage.removeItem("auth_token");
+    return <Navigate to="/login" replace />;
+  }
+
+  // Si está OK → renderizar rutas hijas
+  return <Outlet />;
 }
