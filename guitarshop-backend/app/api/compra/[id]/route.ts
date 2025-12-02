@@ -1,58 +1,47 @@
+// guitarshop-backend/app/api/compras/[id]/route.ts
 import { jsonCors, optionsCors } from "../../../../lib/cors";
 import { verifyToken } from "../../../../lib/auth";
-
-import {
-  getCompraById,
-  updateCompra,
-  deleteCompra,
-} from "../../../../lib/services/compraService";
-
-function getId(req: Request) {
-  const url = new URL(req.url);
-  const id = Number(url.pathname.split("/").pop());
-  return isNaN(id) ? null : id;
-}
+import { obtenerCompraPorId } from "../../../../lib/services/compraService";
 
 export async function OPTIONS() {
   return optionsCors();
 }
 
-// GET /api/compra/:id
+function getIdFromUrl(req: Request): number | null {
+  const url = new URL(req.url);
+  const parts = url.pathname.split("/");
+  const idString = parts[parts.length - 1];
+  const id = Number(idString);
+  return Number.isNaN(id) ? null : id;
+}
+
+// GET /api/compras/:id  (cabecera + detalle)
 export async function GET(req: Request) {
-  const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
 
-  const id = getId(req);
-  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
-  const compra = await getCompraById(id);
-  if (!compra) return jsonCors({ message: "Compra no encontrada" }, { status: 404 });
+  try {
+    const compra = await obtenerCompraPorId(id);
+    if (!compra) {
+      return jsonCors({ error: "Compra no encontrada" }, { status: 404 });
+    }
 
-  return jsonCors(compra);
-}
-
-// PUT /api/compra/:id
-export async function PUT(req: Request) {
-  const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
-
-  const id = getId(req);
-  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
-
-  const body = await req.json();
-  const actualizada = await updateCompra(id, body);
-
-  return jsonCors(actualizada);
-}
-
-// DELETE /api/compra/:id
-export async function DELETE(req: Request) {
-  const v = verifyToken(req);
-  if (!v.valid) return jsonCors({ error: v.error }, { status: 401 });
-
-  const id = getId(req);
-  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
-
-  await deleteCompra(id);
-  return jsonCors({ message: "Compra eliminada" });
+    return jsonCors(compra, { status: 200 });
+  } catch (error) {
+    console.error("Error GET /compras/:id", error);
+    return jsonCors(
+      { error: "Error al obtener compra" },
+      { status: 500 }
+    );
+  }
 }

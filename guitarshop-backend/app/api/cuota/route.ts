@@ -1,15 +1,31 @@
-import { NextResponse } from 'next/server';
-import prisma from '../../../lib/prisma';
+// app/api/cuota/route.ts
+import { jsonCors, optionsCors } from "../../../lib/cors";
+import { verifyToken } from "../../../lib/auth";
+import { obtenerTodasLasCuotas } from "../../../lib/services/cuotaService";
 
-export async function GET() {
-  const cuotas = await prisma.cuota.findMany({
-    include: { credito: true },
-  });
-  return NextResponse.json(cuotas);
+// Respuesta al preflight CORS
+export async function OPTIONS() {
+  return optionsCors();
 }
 
-export async function POST(request: Request) {
-  const body = await request.json();
-  const nueva = await prisma.cuota.create({ data: body });
-  return NextResponse.json(nueva);
+// GET /api/cuota -> lista todas las cuotas
+export async function GET(req: Request) {
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const cuotas = await obtenerTodasLasCuotas();
+    return jsonCors(cuotas, { status: 200 });
+  } catch (err) {
+    console.error("Error GET /cuota", err);
+    return jsonCors(
+      { error: "Error al obtener las cuotas" },
+      { status: 500 }
+    );
+  }
 }

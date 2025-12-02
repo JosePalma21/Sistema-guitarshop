@@ -1,40 +1,60 @@
-import jwt from "jsonwebtoken";
+// guitarshop-backend/lib/auth.ts
+import jwt, { JwtPayload } from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET || "guitar_123";
+const JWT_SECRET = process.env.JWT_SECRET as string;
 
-export interface JwtPayload {
-  id: number;
-  correo: string;
-  iat: number;
-  exp: number;
+if (!JWT_SECRET) {
+  throw new Error("JWT_SECRET no está definido en las variables de entorno");
 }
 
-export function verifyToken(req: Request): {
+export interface AuthResult {
   valid: boolean;
-  payload?: JwtPayload;
-  error?: string;
-} {
+  userId?: number;
+  rol?: string;
+  message?: string;
+}
+
+// Extrae el token del header Authorization: Bearer xxx
+function getTokenFromRequest(req: Request): string | null {
   const authHeader =
     req.headers.get("authorization") || req.headers.get("Authorization");
 
-  if (!authHeader) {
-    return { valid: false, error: "Token no enviado" };
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    return authHeader.substring("Bearer ".length);
   }
 
-  const token = authHeader.split(" ")[1];
+  const tokenHeader = req.headers.get("x-access-token");
+  if (tokenHeader) return tokenHeader;
+
+  return null;
+}
+
+export function verifyToken(req: Request): AuthResult {
+  const token = getTokenFromRequest(req);
+
+  if (!token) {
+    return {
+      valid: false,
+      message: "Token no proporcionado",
+    };
+  }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload;
+    const decoded = jwt.verify(token, JWT_SECRET) as JwtPayload & {
+      id?: number;
+      rol?: string;
+    };
 
     return {
       valid: true,
-      payload: decoded,
+      userId: decoded.id,
+      rol: decoded.rol,
     };
-  } catch (err: any) {
-    if (err.name === "TokenExpiredError") {
-      return { valid: false, error: "Token expirado" };
-    }
-
-    return { valid: false, error: "Token inválido" };
+  } catch (err) {
+    console.error("Error al verificar token:", err);
+    return {
+      valid: false,
+      message: "Token inválido o expirado",
+    };
   }
 }

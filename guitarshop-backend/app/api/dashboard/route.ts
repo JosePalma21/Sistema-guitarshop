@@ -1,14 +1,13 @@
-// guitarshop-backend/app/api/credito/route.ts
+// guitarshop-backend/app/api/dashboard/route.ts
 import { jsonCors, optionsCors } from "../../../lib/cors";
 import { verifyToken } from "../../../lib/auth";
-import { obtenerCreditos } from "../../../lib/services/creditoService";
+import { obtenerDashboard } from "../../../lib/services/dashboardService";
 
-// Respuesta al preflight CORS
 export async function OPTIONS() {
   return optionsCors();
 }
 
-// GET /api/credito  -> lista todos los créditos
+// GET /api/dashboard
 export async function GET(req: Request) {
   const auth = verifyToken(req);
   if (!auth.valid) {
@@ -19,12 +18,12 @@ export async function GET(req: Request) {
   }
 
   try {
-    const creditos = await obtenerCreditos();
-    return jsonCors(creditos, { status: 200 });
+    const data = await obtenerDashboard();
+    return jsonCors(data, { status: 200 });
   } catch (err) {
-    console.error("Error GET /credito:", err);
+    console.error("Error GET /dashboard:", err);
     return jsonCors(
-      { error: "Error al obtener la lista de créditos" },
+      { error: "Error al obtener información del dashboard" },
       { status: 500 }
     );
   }

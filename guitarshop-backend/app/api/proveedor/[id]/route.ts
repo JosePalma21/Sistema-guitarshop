@@ -1,62 +1,134 @@
+// guitarshop-backend/app/api/proveedores/[id]/route.ts
 import { jsonCors, optionsCors } from "../../../../lib/cors";
 import { verifyToken } from "../../../../lib/auth";
-
 import {
-  getProveedorById,
-  updateProveedor,
-  deleteProveedor,
-  type ProveedorCreateInput,
+  obtenerProveedorPorId,
+  actualizarProveedor,
+  eliminarProveedor,
 } from "../../../../lib/services/proveedorService";
-
-function getId(req: Request) {
-  const url = new URL(req.url);
-  const id = Number(url.pathname.split("/").pop());
-  return Number.isNaN(id) ? null : id;
-}
 
 export async function OPTIONS() {
   return optionsCors();
 }
 
+function getIdFromUrl(req: Request): number | null {
+  const url = new URL(req.url);
+  const parts = url.pathname.split("/");
+  const idString = parts[parts.length - 1];
+  const id = Number(idString);
+  return Number.isNaN(id) ? null : id;
+}
+
 // GET /api/proveedores/:id
 export async function GET(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid)
-    return jsonCors({ error: validation.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
 
-  const id = getId(req);
-  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
-  const prov = await getProveedorById(id);
-  if (!prov) return jsonCors({ message: "Proveedor no encontrado" }, { status: 404 });
+  try {
+    const proveedor = await obtenerProveedorPorId(id);
+    if (!proveedor) {
+      return jsonCors({ error: "Proveedor no encontrado" }, { status: 404 });
+    }
 
-  return jsonCors(prov);
+    return jsonCors(proveedor, { status: 200 });
+  } catch (error) {
+    console.error("Error GET /proveedores/:id", error);
+    return jsonCors(
+      { error: "Error al obtener proveedor" },
+      { status: 500 }
+    );
+  }
 }
 
 // PUT /api/proveedores/:id
 export async function PUT(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid)
-    return jsonCors({ error: validation.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
 
-  const id = getId(req);
-  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
-  const body = (await req.json()) as Partial<ProveedorCreateInput>;
+  try {
+    const body = await req.json();
 
-  const actualizado = await updateProveedor(id, body);
-  return jsonCors(actualizado);
+    const proveedor = await actualizarProveedor(id, {
+      nombre_proveedor: body.nombre_proveedor,
+      ruc_cedula: body.ruc_cedula,
+      correo: body.correo,
+      telefono: body.telefono,
+      direccion: body.direccion,
+      id_usuario_modifi: auth.userId ?? null,
+    });
+
+    return jsonCors(proveedor, { status: 200 });
+  } catch (error: any) {
+    console.error("Error PUT /proveedores/:id", error);
+
+    if (error instanceof Error && error.message === "PROVEEDOR_DUPLICADO") {
+      return jsonCors(
+        { error: "El RUC/Cédula ya está registrado para otro proveedor" },
+        { status: 400 }
+      );
+    }
+
+    return jsonCors(
+      { error: "Error al actualizar proveedor" },
+      { status: 500 }
+    );
+  }
 }
 
 // DELETE /api/proveedores/:id
 export async function DELETE(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid)
-    return jsonCors({ error: validation.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
 
-  const id = getId(req);
-  if (id == null) return jsonCors({ message: "ID inválido" }, { status: 400 });
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
-  const eliminado = await deleteProveedor(id);
-  return jsonCors(eliminado);
+  try {
+    const proveedor = await eliminarProveedor(id);
+    return jsonCors(proveedor, { status: 200 });
+  } catch (error: any) {
+    console.error("Error DELETE /proveedores/:id", error);
+
+    if (error instanceof Error && error.message === "PROVEEDOR_CON_RELACIONES") {
+      return jsonCors(
+        {
+          error:
+            "No se puede eliminar el proveedor porque tiene productos o compras asociadas.",
+        },
+        { status: 409 }
+      );
+    }
+
+    return jsonCors(
+      { error: "Error al eliminar proveedor" },
+      { status: 500 }
+    );
+  }
 }

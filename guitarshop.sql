@@ -1,470 +1,646 @@
-/* ==============================================================
-   LIMPIEZA SEGURA
-   ============================================================== */
-DROP TABLE IF EXISTS PRODUCTO_VENTA CASCADE;
-DROP TABLE IF EXISTS PRODUCTO_COMPRA CASCADE;
-DROP TABLE IF EXISTS DETALLE_FACTURA CASCADE;
-DROP TABLE IF EXISTS KARDEX CASCADE;
-DROP TABLE IF EXISTS CREDITO CASCADE;
-DROP TABLE IF EXISTS CUOTA CASCADE;
-DROP TABLE IF EXISTS COMPRA CASCADE;
-DROP TABLE IF EXISTS FACTURA CASCADE;
-DROP TABLE IF EXISTS VENTAS CASCADE;
-DROP TABLE IF EXISTS PRODUCTO CASCADE;
-DROP TABLE IF EXISTS PROVEEDOR CASCADE;
-DROP TABLE IF EXISTS USUARIO CASCADE;
-DROP TABLE IF EXISTS CLIENTE CASCADE;
+/*==============================================================*/
+/*    SISTEMA ADMINISTRATIVO Y VENTAS - GUITAR SHOP             */
+/*    MODELO DE BASE DE DATOS LIMPIO Y NORMALIZADO (POSTGRES)   */
+/*==============================================================*/
 
-/* ==============================================================
-   TABLAS BASE  (con restricciones)
-   ============================================================== */
+/* Limpieza segura: elimina tablas si existen (para rehacer todo) */
 
-CREATE TABLE USUARIO (
-  ID_USUARIO         INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  NOMBRE             VARCHAR(60)  NOT NULL,
-  CORREO             VARCHAR(60)  NOT NULL UNIQUE CHECK (CORREO ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-  TELEFONO           VARCHAR(20)  NOT NULL,
-  DIRECCION          VARCHAR(100) NOT NULL,
-  CEDULA             VARCHAR(15)  NOT NULL UNIQUE CHECK (CEDULA ~ '^[0-9]{10}$'),
-  CONTRASENA         VARCHAR(100) NOT NULL,
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL
+DROP TABLE IF EXISTS cuota         CASCADE;
+DROP TABLE IF EXISTS credito       CASCADE;
+DROP TABLE IF EXISTS detalle_factura CASCADE;
+DROP TABLE IF EXISTS factura       CASCADE;
+DROP TABLE IF EXISTS producto_compra CASCADE;
+DROP TABLE IF EXISTS compra        CASCADE;
+DROP TABLE IF EXISTS kardex        CASCADE;
+DROP TABLE IF EXISTS producto      CASCADE;
+DROP TABLE IF EXISTS proveedor     CASCADE;
+DROP TABLE IF EXISTS cliente       CASCADE;
+DROP TABLE IF EXISTS usuario       CASCADE;
+DROP TABLE IF EXISTS estado_registro CASCADE;
+
+/*==============================================================*/
+/* 1. CATÁLOGO DE ESTADOS                                       */
+/*==============================================================*/
+
+CREATE TABLE estado_registro (
+    id_estado       SERIAL PRIMARY KEY,
+    nombre_estado   VARCHAR(30)  NOT NULL UNIQUE,
+    descripcion     VARCHAR(100)
 );
 
-CREATE TABLE PROVEEDOR (
-  ID_PROVEEDOR       INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  NOMBRE_PROVEEDOR   VARCHAR(100) NOT NULL,
-  TELEFONO           VARCHAR(20)  NOT NULL,
-  CORREO             VARCHAR(60)  NOT NULL UNIQUE CHECK (CORREO ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-  DIRECCION          VARCHAR(100) NOT NULL,
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL
+INSERT INTO estado_registro (nombre_estado, descripcion) VALUES
+  ('ACTIVO',   'Registro activo'),
+  ('INACTIVO', 'Registro inactivo / dado de baja'),
+  ('ANULADO',  'Registro anulado'),
+  ('PENDIENTE','Pendiente de completar');
+
+/*==============================================================*/
+/* 2. USUARIOS                                                  */
+/*==============================================================*/
+
+CREATE TABLE usuario (
+    id_usuario          SERIAL PRIMARY KEY,
+    nombre_completo     VARCHAR(100) NOT NULL,
+    correo              VARCHAR(120) NOT NULL UNIQUE,
+    telefono            VARCHAR(20),
+    direccion           VARCHAR(150),
+    cedula              VARCHAR(10) UNIQUE,
+    rol                 VARCHAR(30) NOT NULL DEFAULT 'VENDEDOR',
+    password_hash       VARCHAR(255) NOT NULL,
+    fecha_creacion      TIMESTAMP NOT NULL DEFAULT NOW(),
+    id_estado           INT NOT NULL DEFAULT 1,
+    id_usuario_modifi   INT NULL
 );
 
-CREATE TABLE PRODUCTO (
-  ID_PRODUCTO        INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ID_PROVEEDOR       INT          NOT NULL,
-  NOMBRE_PRODUCTO    VARCHAR(100) NOT NULL,
-  DESCRIPCION        VARCHAR(255),
-  PRECIO             NUMERIC(12,2) NOT NULL CHECK (PRECIO >= 0),
-  CANTIDAD_STOCK     INT           NOT NULL CHECK (CANTIDAD_STOCK >= 0),
-  FOTO               VARCHAR(254),
-  FECHA              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT           NOT NULL,
-  ID_USUARIO_MODIFI  INT           NULL,
-  CONSTRAINT FK_PRODUCTO_PROVEEDOR FOREIGN KEY (ID_PROVEEDOR)
-    REFERENCES PROVEEDOR(ID_PROVEEDOR) ON DELETE RESTRICT ON UPDATE RESTRICT
+ALTER TABLE usuario
+  ADD CONSTRAINT chk_usuario_cedula
+  CHECK (
+    cedula IS NULL
+    OR (char_length(cedula) = 10 AND cedula ~ '^[0-9]+$')
+  );
+
+ALTER TABLE usuario
+  ADD CONSTRAINT chk_usuario_correo
+  CHECK (correo ~ '^[^@]+@[^@]+\.[^@]+$');
+
+ALTER TABLE usuario
+  ADD CONSTRAINT fk_usuario_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE usuario
+  ADD CONSTRAINT fk_usuario_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+/*==============================================================*/
+/* 3. CLIENTES                                                  */
+/*==============================================================*/
+
+CREATE TABLE cliente (
+    id_cliente        SERIAL PRIMARY KEY,
+    nombres           VARCHAR(60)  NOT NULL,
+    apellidos         VARCHAR(60)  NOT NULL,
+    cedula            VARCHAR(10)  NOT NULL UNIQUE,
+    correo            VARCHAR(120),
+    telefono          VARCHAR(20),
+    direccion         VARCHAR(150),
+    fecha_registro    TIMESTAMP NOT NULL DEFAULT NOW(),
+    id_estado         INT NOT NULL DEFAULT 1,
+    id_usuario_modifi INT NULL
 );
 
-CREATE TABLE CLIENTE (
-  ID_CLIENTE         INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  NOMBRE             VARCHAR(60)  NOT NULL,
-  CEDULA             VARCHAR(15)  NOT NULL UNIQUE CHECK (CEDULA ~ '^[0-9]{10}$'),
-  CORREO             VARCHAR(60)  NOT NULL UNIQUE CHECK (CORREO ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'),
-  TELEFONO           VARCHAR(20)  NOT NULL,
-  DIRECCION          VARCHAR(100) NOT NULL,
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL
+ALTER TABLE cliente
+  ADD CONSTRAINT chk_cliente_cedula
+  CHECK (char_length(cedula) = 10 AND cedula ~ '^[0-9]+$');
+
+ALTER TABLE cliente
+  ADD CONSTRAINT chk_cliente_correo
+  CHECK (correo IS NULL OR correo ~ '^[^@]+@[^@]+\.[^@]+$');
+
+ALTER TABLE cliente
+  ADD CONSTRAINT fk_cliente_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE cliente
+  ADD CONSTRAINT fk_cliente_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+/*==============================================================*/
+/* 4. PROVEEDORES                                               */
+/*==============================================================*/
+
+CREATE TABLE proveedor (
+    id_proveedor      SERIAL PRIMARY KEY,
+    nombre_proveedor  VARCHAR(100) NOT NULL,
+    ruc_cedula        VARCHAR(13)  NOT NULL UNIQUE,
+    correo            VARCHAR(120),
+    telefono          VARCHAR(20),
+    direccion         VARCHAR(150),
+    fecha_registro    TIMESTAMP NOT NULL DEFAULT NOW(),
+    id_estado         INT NOT NULL DEFAULT 1,
+    id_usuario_modifi INT NULL
 );
 
-CREATE TABLE FACTURA (
-  ID_FACTURA         INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ID_CLIENTE         INT          NULL,
-  ID_USUARIO         INT          NOT NULL,
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  TOTAL_FACTURA      NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (TOTAL_FACTURA >= 0),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL,
-  CONSTRAINT FK_FACTURA_USUARIO FOREIGN KEY (ID_USUARIO)
-    REFERENCES USUARIO(ID_USUARIO) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_FACTURA_CLIENTE FOREIGN KEY (ID_CLIENTE)
-    REFERENCES CLIENTE(ID_CLIENTE) ON DELETE SET NULL ON UPDATE RESTRICT
+ALTER TABLE proveedor
+  ADD CONSTRAINT chk_proveedor_correo
+  CHECK (correo IS NULL OR correo ~ '^[^@]+@[^@]+\.[^@]+$');
+
+ALTER TABLE proveedor
+  ADD CONSTRAINT fk_proveedor_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE proveedor
+  ADD CONSTRAINT fk_proveedor_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+/*==============================================================*/
+/* 5. PRODUCTOS                                                 */
+/*==============================================================*/
+
+CREATE TABLE producto (
+    id_producto         SERIAL PRIMARY KEY,
+    codigo_producto     VARCHAR(30)  NOT NULL UNIQUE,
+    nombre_producto     VARCHAR(100) NOT NULL,
+    descripcion         VARCHAR(255),
+    id_proveedor        INT NULL,
+    precio_compra       NUMERIC(12,2) NOT NULL DEFAULT 0,
+    precio_venta        NUMERIC(12,2) NOT NULL DEFAULT 0,
+    cantidad_stock      INT NOT NULL DEFAULT 0,
+    stock_minimo        INT NOT NULL DEFAULT 0,
+    fecha_creacion      TIMESTAMP NOT NULL DEFAULT NOW(),
+    id_estado           INT NOT NULL DEFAULT 1,
+    id_usuario_modifi   INT NULL
 );
 
-CREATE TABLE COMPRA (
-  ID_COMPRA          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ID_PROVEEDOR       INT          NOT NULL,
-  ID_USUARIO         INT          NOT NULL,
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  TOTAL_COMPRA       NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (TOTAL_COMPRA >= 0),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL,
-  CONSTRAINT FK_COMPRA_PROVEEDOR FOREIGN KEY (ID_PROVEEDOR)
-    REFERENCES PROVEEDOR(ID_PROVEEDOR) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_COMPRA_USUARIO FOREIGN KEY (ID_USUARIO)
-    REFERENCES USUARIO(ID_USUARIO) ON DELETE RESTRICT ON UPDATE RESTRICT
+ALTER TABLE producto
+  ADD CONSTRAINT chk_producto_precios
+  CHECK (precio_compra >= 0 AND precio_venta >= 0);
+
+ALTER TABLE producto
+  ADD CONSTRAINT chk_producto_stock
+  CHECK (cantidad_stock >= 0 AND stock_minimo >= 0);
+
+ALTER TABLE producto
+  ADD CONSTRAINT fk_producto_proveedor
+  FOREIGN KEY (id_proveedor)
+  REFERENCES proveedor(id_proveedor);
+
+ALTER TABLE producto
+  ADD CONSTRAINT fk_producto_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE producto
+  ADD CONSTRAINT fk_producto_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+/*==============================================================*/
+/* 6. COMPRAS (CABECERA)                                       */
+/*==============================================================*/
+
+CREATE TABLE compra (
+    id_compra         SERIAL PRIMARY KEY,
+    fecha_compra      TIMESTAMP NOT NULL DEFAULT NOW(),
+    id_proveedor      INT NOT NULL,
+    id_usuario        INT NOT NULL, -- quién registra la compra
+    observacion       VARCHAR(255),
+    subtotal          NUMERIC(12,2) NOT NULL DEFAULT 0,
+    impuesto          NUMERIC(12,2) NOT NULL DEFAULT 0,
+    total             NUMERIC(12,2) NOT NULL DEFAULT 0,
+    id_estado         INT NOT NULL DEFAULT 1,
+    id_usuario_modifi INT NULL
 );
 
-CREATE TABLE CUOTA (
-  ID_CUOTA           VARCHAR(10)  PRIMARY KEY,
-  NUM_CUOTA          VARCHAR(10)  NOT NULL,
-  FECHA              DATE         NOT NULL,
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL
+ALTER TABLE compra
+  ADD CONSTRAINT fk_compra_proveedor
+  FOREIGN KEY (id_proveedor)
+  REFERENCES proveedor(id_proveedor);
+
+ALTER TABLE compra
+  ADD CONSTRAINT fk_compra_usuario
+  FOREIGN KEY (id_usuario)
+  REFERENCES usuario(id_usuario);
+
+ALTER TABLE compra
+  ADD CONSTRAINT fk_compra_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE compra
+  ADD CONSTRAINT fk_compra_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+/*==============================================================*/
+/* 7. DETALLE DE COMPRAS (PRODUCTO_COMPRA)                      */
+/*==============================================================*/
+
+CREATE TABLE producto_compra (
+    id_producto_compra SERIAL PRIMARY KEY,
+    id_compra          INT NOT NULL,
+    id_producto        INT NOT NULL,
+    cantidad_compra    INT NOT NULL,
+    costo_unitario     NUMERIC(12,2) NOT NULL,
+    subtotal           NUMERIC(12,2) NOT NULL,
+    id_estado          INT NOT NULL DEFAULT 1,
+    id_usuario_modifi  INT NULL
 );
 
-CREATE TABLE CREDITO (
-  ID_CREDITO         INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ID_FACTURA         INT          NOT NULL,
-  ID_CUOTA           VARCHAR(10)  NOT NULL,
-  ID_CLIENTE         INT          NOT NULL,
-  DEUDA              NUMERIC(12,2) NOT NULL CHECK (DEUDA >= 0),
-  FECHA              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT           NOT NULL,
-  ID_USUARIO_MODIFI  INT           NULL,
-  CONSTRAINT FK_CREDITO_FACTURA FOREIGN KEY (ID_FACTURA)
-    REFERENCES FACTURA(ID_FACTURA) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_CREDITO_CUOTA FOREIGN KEY (ID_CUOTA)
-    REFERENCES CUOTA(ID_CUOTA) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_CREDITO_CLIENTE FOREIGN KEY (ID_CLIENTE)
-    REFERENCES CLIENTE(ID_CLIENTE) ON DELETE RESTRICT ON UPDATE RESTRICT
+ALTER TABLE producto_compra
+  ADD CONSTRAINT chk_producto_compra_cantidad
+  CHECK (cantidad_compra > 0);
+
+ALTER TABLE producto_compra
+  ADD CONSTRAINT chk_producto_compra_costos
+  CHECK (costo_unitario >= 0 AND subtotal >= 0);
+
+ALTER TABLE producto_compra
+  ADD CONSTRAINT fk_producto_compra_compra
+  FOREIGN KEY (id_compra)
+  REFERENCES compra(id_compra)
+  ON DELETE CASCADE;
+
+ALTER TABLE producto_compra
+  ADD CONSTRAINT fk_producto_compra_producto
+  FOREIGN KEY (id_producto)
+  REFERENCES producto(id_producto);
+
+ALTER TABLE producto_compra
+  ADD CONSTRAINT fk_producto_compra_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE producto_compra
+  ADD CONSTRAINT fk_producto_compra_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX ux_producto_compra_unico
+ON producto_compra (id_compra, id_producto);
+
+/*==============================================================*/
+/* 8. FACTURAS (VENTAS - CABECERA)                             */
+/*==============================================================*/
+
+CREATE TABLE factura (
+    id_factura        SERIAL PRIMARY KEY,
+    numero_factura    VARCHAR(30) NOT NULL UNIQUE,
+    fecha_factura     TIMESTAMP NOT NULL DEFAULT NOW(),
+    id_cliente        INT NOT NULL,
+    id_usuario        INT NOT NULL, -- vendedor
+    observacion       VARCHAR(255),
+    forma_pago        VARCHAR(30) NOT NULL DEFAULT 'CONTADO',
+    subtotal          NUMERIC(12,2) NOT NULL DEFAULT 0,
+    impuesto          NUMERIC(12,2) NOT NULL DEFAULT 0,
+    total             NUMERIC(12,2) NOT NULL DEFAULT 0,
+    id_estado         INT NOT NULL DEFAULT 1,
+    id_usuario_modifi INT NULL
 );
 
-CREATE TABLE VENTAS (
-  ID_VENTA           INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  PRODUCTO_VENDIDO   VARCHAR(100) NOT NULL,
-  CANTIDAD_VENDIDA   INT          NOT NULL CHECK (CANTIDAD_VENDIDA > 0),
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL
+ALTER TABLE factura
+  ADD CONSTRAINT fk_factura_cliente
+  FOREIGN KEY (id_cliente)
+  REFERENCES cliente(id_cliente);
+
+ALTER TABLE factura
+  ADD CONSTRAINT fk_factura_usuario
+  FOREIGN KEY (id_usuario)
+  REFERENCES usuario(id_usuario);
+
+ALTER TABLE factura
+  ADD CONSTRAINT fk_factura_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE factura
+  ADD CONSTRAINT fk_factura_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+/*==============================================================*/
+/* 9. DETALLE DE FACTURA                                        */
+/*==============================================================*/
+
+CREATE TABLE detalle_factura (
+    id_detalle_factura SERIAL PRIMARY KEY,
+    id_factura         INT NOT NULL,
+    id_producto        INT NOT NULL,
+    cantidad           INT NOT NULL,
+    precio_unitario    NUMERIC(12,2) NOT NULL,
+    descuento          NUMERIC(12,2) NOT NULL DEFAULT 0,
+    subtotal           NUMERIC(12,2) NOT NULL,
+    id_estado          INT NOT NULL DEFAULT 1,
+    id_usuario_modifi  INT NULL
 );
 
+ALTER TABLE detalle_factura
+  ADD CONSTRAINT chk_detalle_factura_cantidad
+  CHECK (cantidad > 0);
 
-CREATE TABLE DETALLE_FACTURA (
-  ID_DET_FACT        INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ID_PRODUCTO        INT          NOT NULL,
-  ID_FACTURA         INT          NOT NULL,
-  CANT_PRODUCTO      INT          NOT NULL CHECK (CANT_PRODUCTO > 0),
-  PRECIO_UNITARIO    NUMERIC(12,2) NOT NULL CHECK (PRECIO_UNITARIO >= 0),
-  PRECIO_TOTAL       NUMERIC(12,2) NOT NULL CHECK (PRECIO_TOTAL >= 0),
-  FECHA              TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT          NOT NULL,
-  ID_USUARIO_MODIFI  INT          NULL,
-  CONSTRAINT FK_DETALLE_PRODUCTO FOREIGN KEY (ID_PRODUCTO)
-    REFERENCES PRODUCTO(ID_PRODUCTO) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_DETALLE_FACTURA FOREIGN KEY (ID_FACTURA)
-    REFERENCES FACTURA(ID_FACTURA) ON DELETE CASCADE ON UPDATE RESTRICT
+ALTER TABLE detalle_factura
+  ADD CONSTRAINT chk_detalle_factura_precios
+  CHECK (precio_unitario >= 0 AND descuento >= 0 AND subtotal >= 0);
+
+ALTER TABLE detalle_factura
+  ADD CONSTRAINT fk_detalle_factura_factura
+  FOREIGN KEY (id_factura)
+  REFERENCES factura(id_factura)
+  ON DELETE CASCADE;
+
+ALTER TABLE detalle_factura
+  ADD CONSTRAINT fk_detalle_factura_producto
+  FOREIGN KEY (id_producto)
+  REFERENCES producto(id_producto);
+
+ALTER TABLE detalle_factura
+  ADD CONSTRAINT fk_detalle_factura_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE detalle_factura
+  ADD CONSTRAINT fk_detalle_factura_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX ux_detalle_factura_unico
+ON detalle_factura (id_factura, id_producto);
+
+/*==============================================================*/
+/* 10. CRÉDITOS Y CUOTAS                                        */
+/*==============================================================*/
+
+CREATE TABLE credito (
+    id_credito        SERIAL PRIMARY KEY,
+    id_factura        INT NOT NULL,
+    monto_total       NUMERIC(12,2) NOT NULL,
+    saldo_pendiente   NUMERIC(12,2) NOT NULL,
+    fecha_inicio      DATE NOT NULL,
+    fecha_fin         DATE,
+    id_estado         INT NOT NULL DEFAULT 1,
+    id_usuario_modifi INT NULL
 );
 
-/* Líneas de compra */
-CREATE TABLE PRODUCTO_COMPRA (
-  ID_PRODUCTO        INT NOT NULL,
-  ID_COMPRA          INT NOT NULL,
-  CANTIDAD_COMPRA    INT NOT NULL CHECK (CANTIDAD_COMPRA > 0),
-  COSTO_UNITARIO     NUMERIC(12,2) NOT NULL CHECK (COSTO_UNITARIO >= 0),
-  SUBTOTAL           NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (SUBTOTAL >= 0),
-  PRIMARY KEY (ID_PRODUCTO, ID_COMPRA),
-  CONSTRAINT FK_PC_PRODUCTO FOREIGN KEY (ID_PRODUCTO)
-    REFERENCES PRODUCTO(ID_PRODUCTO) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_PC_COMPRA FOREIGN KEY (ID_COMPRA)
-    REFERENCES COMPRA(ID_COMPRA) ON DELETE CASCADE ON UPDATE RESTRICT
+ALTER TABLE credito
+  ADD CONSTRAINT chk_credito_montos
+  CHECK (monto_total >= 0 AND saldo_pendiente >= 0);
+
+ALTER TABLE credito
+  ADD CONSTRAINT fk_credito_factura
+  FOREIGN KEY (id_factura)
+  REFERENCES factura(id_factura);
+
+ALTER TABLE credito
+  ADD CONSTRAINT fk_credito_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
+
+ALTER TABLE credito
+  ADD CONSTRAINT fk_credito_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+
+CREATE TABLE cuota (
+    id_cuota          SERIAL PRIMARY KEY,
+    id_credito        INT NOT NULL,
+    numero_cuota      INT NOT NULL,
+    fecha_vencimiento DATE NOT NULL,
+    monto_cuota       NUMERIC(12,2) NOT NULL,
+    monto_pagado      NUMERIC(12,2) NOT NULL DEFAULT 0,
+    estado_cuota      VARCHAR(20) NOT NULL DEFAULT 'PENDIENTE',
+    fecha_pago        DATE,
+    id_usuario_modifi INT NULL
 );
 
-/* Relación opcional producto-ventas*/
-CREATE TABLE PRODUCTO_VENTA (
-  ID_PRODUCTO        INT NOT NULL,
-  ID_VENTA           INT NOT NULL,
-  PRIMARY KEY (ID_PRODUCTO, ID_VENTA),
-  CONSTRAINT FK_PV_PRODUCTO FOREIGN KEY (ID_PRODUCTO)
-    REFERENCES PRODUCTO(ID_PRODUCTO) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_PV_VENTA FOREIGN KEY (ID_VENTA)
-    REFERENCES VENTAS(ID_VENTA) ON DELETE CASCADE ON UPDATE RESTRICT
+ALTER TABLE cuota
+  ADD CONSTRAINT chk_cuota_montos
+  CHECK (monto_cuota >= 0 AND monto_pagado >= 0);
+
+ALTER TABLE cuota
+  ADD CONSTRAINT chk_cuota_estado
+  CHECK (estado_cuota IN ('PENDIENTE','PAGADA','VENCIDA'));
+
+ALTER TABLE cuota
+  ADD CONSTRAINT fk_cuota_credito
+  FOREIGN KEY (id_credito)
+  REFERENCES credito(id_credito)
+  ON DELETE CASCADE;
+
+ALTER TABLE cuota
+  ADD CONSTRAINT fk_cuota_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
+
+CREATE UNIQUE INDEX ux_cuota_unica
+ON cuota (id_credito, numero_cuota);
+
+/*==============================================================*/
+/* 11. KARDEX (HISTORIAL DE MOVIMIENTOS DE INVENTARIO)          */
+/*==============================================================*/
+
+CREATE TABLE kardex (
+    id_kardex         SERIAL PRIMARY KEY,
+    id_producto       INT NOT NULL,
+    fecha_movimiento  TIMESTAMP NOT NULL DEFAULT NOW(),
+    tipo_movimiento   VARCHAR(20) NOT NULL,  -- ENTRADA, SALIDA, AJUSTE
+    origen            VARCHAR(20) NOT NULL,  -- COMPRA, VENTA, AJUSTE
+    id_referencia     INT,
+    cantidad          INT NOT NULL,
+    costo_unitario    NUMERIC(12,2) NOT NULL,
+    comentario        VARCHAR(255),
+    id_estado         INT NOT NULL DEFAULT 1,
+    id_usuario_modifi INT NULL
 );
 
-/* KARDEX: agregamos ID_FACTURA para registrar salidas por ventas reales */
-CREATE TABLE KARDEX (
-  ID_KARDEX          INT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-  ID_PRODUCTO        INT          NOT NULL,
-  ID_VENTA           INT          NULL,
-  ID_COMPRA          INT          NULL,
-  ID_FACTURA         INT          NULL,
-  TIPO_MOVIMIENTO    VARCHAR(50)  NOT NULL CHECK (TIPO_MOVIMIENTO IN ('ENTRADA','SALIDA')),
-  INGRESO            NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (INGRESO >= 0),
-  EGRESO             NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (EGRESO >= 0),
-  COSTO_UNITARIO     NUMERIC(12,2) NOT NULL CHECK (COSTO_UNITARIO >= 0),
-  COSTO_TOTAL        NUMERIC(12,2) NOT NULL CHECK (COSTO_TOTAL >= 0),
-  VALOR_MOVIMIENTO   NUMERIC(12,2) NOT NULL CHECK (VALOR_MOVIMIENTO >= 0),
-  FECHA              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  FECHA_CREACION     TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  ID_ESTADO          INT           NOT NULL,
-  ID_USUARIO_MODIFI  INT           NULL,
-  CONSTRAINT FK_KX_PRODUCTO FOREIGN KEY (ID_PRODUCTO)
-    REFERENCES PRODUCTO(ID_PRODUCTO) ON DELETE RESTRICT ON UPDATE RESTRICT,
-  CONSTRAINT FK_KX_VENTA FOREIGN KEY (ID_VENTA)
-    REFERENCES VENTAS(ID_VENTA) ON DELETE SET NULL ON UPDATE RESTRICT,
-  CONSTRAINT FK_KX_COMPRA FOREIGN KEY (ID_COMPRA)
-    REFERENCES COMPRA(ID_COMPRA) ON DELETE SET NULL ON UPDATE RESTRICT,
-  CONSTRAINT FK_KX_FACTURA FOREIGN KEY (ID_FACTURA)
-    REFERENCES FACTURA(ID_FACTURA) ON DELETE SET NULL ON UPDATE RESTRICT,
-  /* exactamente UNA referencia */
-  CONSTRAINT CK_KX_UNA_REF CHECK (
-    (CASE WHEN ID_VENTA   IS NOT NULL THEN 1 ELSE 0 END) +
-    (CASE WHEN ID_COMPRA  IS NOT NULL THEN 1 ELSE 0 END) +
-    (CASE WHEN ID_FACTURA IS NOT NULL THEN 1 ELSE 0 END) = 1
-  )
-);
+ALTER TABLE kardex
+  ADD CONSTRAINT chk_kardex_cantidad
+  CHECK (cantidad > 0);
 
-/* ==============================================================
-   ÍNDICES para FKs (mejor desempeño)
-   ============================================================== */
-CREATE INDEX IF NOT EXISTS idx_producto_prov      ON PRODUCTO (ID_PROVEEDOR);
-CREATE INDEX IF NOT EXISTS idx_factura_usuario    ON FACTURA (ID_USUARIO);
-CREATE INDEX IF NOT EXISTS idx_factura_cliente    ON FACTURA (ID_CLIENTE);
-CREATE INDEX IF NOT EXISTS idx_det_factura        ON DETALLE_FACTURA (ID_FACTURA);
-CREATE INDEX IF NOT EXISTS idx_det_producto       ON DETALLE_FACTURA (ID_PRODUCTO);
-CREATE INDEX IF NOT EXISTS idx_pc_compra          ON PRODUCTO_COMPRA (ID_COMPRA);
-CREATE INDEX IF NOT EXISTS idx_pc_producto        ON PRODUCTO_COMPRA (ID_PRODUCTO);
-CREATE INDEX IF NOT EXISTS idx_kx_prod            ON KARDEX (ID_PRODUCTO);
-CREATE INDEX IF NOT EXISTS idx_kx_factura         ON KARDEX (ID_FACTURA);
-CREATE INDEX IF NOT EXISTS idx_kx_compra          ON KARDEX (ID_COMPRA);
+ALTER TABLE kardex
+  ADD CONSTRAINT chk_kardex_tipo_mov
+  CHECK (tipo_movimiento IN ('ENTRADA','SALIDA','AJUSTE'));
 
-/* ==============================================================
-   FUNCIONES DE NEGOCIO (PostgreSQL PL/pgSQL)
-   ============================================================== */
-CREATE OR REPLACE FUNCTION fn_recalc_total_factura(p_id_factura INT)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE FACTURA f
-     SET TOTAL_FACTURA = COALESCE((
-       SELECT SUM(PRECIO_TOTAL)
-       FROM DETALLE_FACTURA df
-       WHERE df.ID_FACTURA = f.ID_FACTURA
-     ),0)
-   WHERE f.ID_FACTURA = p_id_factura;
-END;
-$$ LANGUAGE plpgsql;
+ALTER TABLE kardex
+  ADD CONSTRAINT chk_kardex_origen
+  CHECK (origen IN ('COMPRA','VENTA','AJUSTE'));
 
-CREATE OR REPLACE FUNCTION fn_recalc_total_compra(p_id_compra INT)
-RETURNS VOID AS $$
-BEGIN
-  UPDATE COMPRA c
-     SET TOTAL_COMPRA = COALESCE((
-       SELECT SUM(SUBTOTAL)
-       FROM PRODUCTO_COMPRA pc
-       WHERE pc.ID_COMPRA = c.ID_COMPRA
-     ),0)
-   WHERE c.ID_COMPRA = p_id_compra;
-END;
-$$ LANGUAGE plpgsql;
+ALTER TABLE kardex
+  ADD CONSTRAINT fk_kardex_producto
+  FOREIGN KEY (id_producto)
+  REFERENCES producto(id_producto);
 
-/* ==============================================================
-   TRIGGERS DETALLE_FACTURA: precios, stock, kardex, total factura
-   ============================================================== */
+ALTER TABLE kardex
+  ADD CONSTRAINT fk_kardex_estado
+  FOREIGN KEY (id_estado)
+  REFERENCES estado_registro(id_estado);
 
-/* Completa precio_unitario si viene NULL y calcula precio_total */
-CREATE OR REPLACE FUNCTION tg_df_set_prices()
-RETURNS TRIGGER AS $$
-DECLARE v_precio NUMERIC(12,2);
-BEGIN
-  IF NEW.PRECIO_UNITARIO IS NULL THEN
-    SELECT PRECIO INTO v_precio FROM PRODUCTO WHERE ID_PRODUCTO = NEW.ID_PRODUCTO;
-    NEW.PRECIO_UNITARIO := COALESCE(v_precio,0);
-  END IF;
-  NEW.PRECIO_TOTAL := NEW.CANT_PRODUCTO * NEW.PRECIO_UNITARIO;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
+ALTER TABLE kardex
+  ADD CONSTRAINT fk_kardex_usuario_modifi
+  FOREIGN KEY (id_usuario_modifi)
+  REFERENCES usuario(id_usuario)
+  ON DELETE SET NULL;
 
-CREATE TRIGGER trg_df_bi_prices
-BEFORE INSERT ON DETALLE_FACTURA
-FOR EACH ROW EXECUTE FUNCTION tg_df_set_prices();
+/*==============================================================*/
+/* 12. FUNCIONES Y TRIGGERS DE NEGOCIO                          */
+/*==============================================================*/
 
-CREATE TRIGGER trg_df_bu_prices
-BEFORE UPDATE ON DETALLE_FACTURA
-FOR EACH ROW EXECUTE FUNCTION tg_df_set_prices();
+/*---- 12.1 Recalcular totales de una compra ------------------*/
 
-/* Ajusta stock y kardex tras INSERT/UPDATE/DELETE */
-CREATE OR REPLACE FUNCTION tg_df_stock_kardex()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION fn_recalcular_totales_compra(p_id_compra INT)
+RETURNS VOID AS
+$$
 DECLARE
-  v_delta INT;
-  v_costo NUMERIC(12,2);
+    v_subtotal NUMERIC(12,2);
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    v_delta := NEW.CANT_PRODUCTO;                -- salida
-    v_costo := NEW.PRECIO_UNITARIO;
-    UPDATE PRODUCTO
-       SET CANTIDAD_STOCK = CANTIDAD_STOCK - v_delta
-     WHERE ID_PRODUCTO = NEW.ID_PRODUCTO;
+    SELECT COALESCE(SUM(subtotal), 0)
+    INTO v_subtotal
+    FROM producto_compra
+    WHERE id_compra = p_id_compra
+      AND id_estado <> (SELECT id_estado FROM estado_registro WHERE nombre_estado = 'ANULADO');
 
-    IF (SELECT CANTIDAD_STOCK FROM PRODUCTO WHERE ID_PRODUCTO = NEW.ID_PRODUCTO) < 0 THEN
-      RAISE EXCEPTION 'Stock negativo para producto %', NEW.ID_PRODUCTO;
-    END IF;
-
-    INSERT INTO KARDEX(ID_PRODUCTO, ID_FACTURA, TIPO_MOVIMIENTO, INGRESO, EGRESO, COSTO_UNITARIO, COSTO_TOTAL, VALOR_MOVIMIENTO)
-    VALUES (NEW.ID_PRODUCTO, NEW.ID_FACTURA, 'SALIDA', 0, v_delta, v_costo, v_delta*v_costo, v_delta*v_costo);
-
-    PERFORM fn_recalc_total_factura(NEW.ID_FACTURA);
-    RETURN NEW;
-
-  ELSIF TG_OP = 'UPDATE' THEN
-    v_delta := NEW.CANT_PRODUCTO - OLD.CANT_PRODUCTO;  -- si + => más salida
-    v_costo := NEW.PRECIO_UNITARIO;
-
-    UPDATE PRODUCTO
-       SET CANTIDAD_STOCK = CANTIDAD_STOCK - v_delta
-     WHERE ID_PRODUCTO = NEW.ID_PRODUCTO;
-
-    IF (SELECT CANTIDAD_STOCK FROM PRODUCTO WHERE ID_PRODUCTO = NEW.ID_PRODUCTO) < 0 THEN
-      RAISE EXCEPTION 'Stock negativo para producto %', NEW.ID_PRODUCTO;
-    END IF;
-
-    /* registro kardex por la diferencia */
-    IF v_delta <> 0 THEN
-      INSERT INTO KARDEX(ID_PRODUCTO, ID_FACTURA, TIPO_MOVIMIENTO, INGRESO, EGRESO, COSTO_UNITARIO, COSTO_TOTAL, VALOR_MOVIMIENTO)
-      VALUES (
-        NEW.ID_PRODUCTO,
-        NEW.ID_FACTURA,
-        CASE WHEN v_delta > 0 THEN 'SALIDA' ELSE 'ENTRADA' END,
-        CASE WHEN v_delta < 0 THEN ABS(v_delta) ELSE 0 END,
-        CASE WHEN v_delta > 0 THEN v_delta ELSE 0 END,
-        v_costo,
-        ABS(v_delta)*v_costo,
-        ABS(v_delta)*v_costo
-      );
-    END IF;
-
-    PERFORM fn_recalc_total_factura(NEW.ID_FACTURA);
-    RETURN NEW;
-
-  ELSIF TG_OP = 'DELETE' THEN
-    UPDATE PRODUCTO
-       SET CANTIDAD_STOCK = CANTIDAD_STOCK + OLD.CANT_PRODUCTO
-     WHERE ID_PRODUCTO = OLD.ID_PRODUCTO;
-
-    INSERT INTO KARDEX(ID_PRODUCTO, ID_FACTURA, TIPO_MOVIMIENTO, INGRESO, EGRESO, COSTO_UNITARIO, COSTO_TOTAL, VALOR_MOVIMIENTO)
-    VALUES (OLD.ID_PRODUCTO, OLD.ID_FACTURA, 'ENTRADA', OLD.CANT_PRODUCTO, 0, OLD.PRECIO_UNITARIO, OLD.CANT_PRODUCTO*OLD.PRECIO_UNITARIO, OLD.CANT_PRODUCTO*OLD.PRECIO_UNITARIO);
-
-    PERFORM fn_recalc_total_factura(OLD.ID_FACTURA);
-    RETURN OLD;
-  END IF;
-  RETURN NULL;
+    UPDATE compra
+    SET subtotal = v_subtotal,
+        impuesto = ROUND(v_subtotal * 0.12, 2),
+        total    = ROUND(v_subtotal * 1.12, 2)
+    WHERE id_compra = p_id_compra;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_df_ai_stock
-AFTER INSERT ON DETALLE_FACTURA
-FOR EACH ROW EXECUTE FUNCTION tg_df_stock_kardex();
 
-CREATE TRIGGER trg_df_au_stock
-AFTER UPDATE ON DETALLE_FACTURA
-FOR EACH ROW EXECUTE FUNCTION tg_df_stock_kardex();
+/*---- 12.2 Recalcular totales de una factura -----------------*/
 
-CREATE TRIGGER trg_df_ad_stock
-AFTER DELETE ON DETALLE_FACTURA
-FOR EACH ROW EXECUTE FUNCTION tg_df_stock_kardex();
-
-/* ==============================================================
-   TRIGGERS PRODUCTO_COMPRA: subtotal, total compra, stock y kardex
-   ============================================================== */
-
-CREATE OR REPLACE FUNCTION tg_pc_set_subtotal()
-RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION fn_recalcular_totales_factura(p_id_factura INT)
+RETURNS VOID AS
+$$
+DECLARE
+    v_subtotal NUMERIC(12,2);
 BEGIN
-  NEW.SUBTOTAL := NEW.CANTIDAD_COMPRA * NEW.COSTO_UNITARIO;
-  RETURN NEW;
-END; $$ LANGUAGE plpgsql;
+    SELECT COALESCE(SUM(subtotal), 0)
+    INTO v_subtotal
+    FROM detalle_factura
+    WHERE id_factura = p_id_factura
+      AND id_estado <> (SELECT id_estado FROM estado_registro WHERE nombre_estado = 'ANULADO');
 
-CREATE TRIGGER trg_pc_bi_subtotal
-BEFORE INSERT ON PRODUCTO_COMPRA
-FOR EACH ROW EXECUTE FUNCTION tg_pc_set_subtotal();
+    UPDATE factura
+    SET subtotal = v_subtotal,
+        impuesto = ROUND(v_subtotal * 0.12, 2),
+        total    = ROUND(v_subtotal * 1.12, 2)
+    WHERE id_factura = p_id_factura;
+END;
+$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_pc_bu_subtotal
-BEFORE UPDATE ON PRODUCTO_COMPRA
-FOR EACH ROW EXECUTE FUNCTION tg_pc_set_subtotal();
 
-CREATE OR REPLACE FUNCTION tg_pc_stock_kardex()
-RETURNS TRIGGER AS $$
-DECLARE v_delta INT; v_costo NUMERIC(12,2);
+/*---- 12.3 Trigger: al insertar producto_compra ---------------*/
+/*     - Actualiza stock del producto                           */
+/*     - Inserta movimiento ENTRADA en KARDEX                   */
+/*     - Recalcula totales de la compra                         */
+
+CREATE OR REPLACE FUNCTION trg_producto_compra_after_insert()
+RETURNS TRIGGER AS
+$$
 BEGIN
-  IF TG_OP = 'INSERT' THEN
-    v_delta := NEW.CANTIDAD_COMPRA; v_costo := NEW.COSTO_UNITARIO;
+    -- Actualizar stock
+    UPDATE producto
+    SET cantidad_stock = cantidad_stock + NEW.cantidad_compra
+    WHERE id_producto = NEW.id_producto;
 
-    UPDATE PRODUCTO
-       SET CANTIDAD_STOCK = CANTIDAD_STOCK + v_delta
-     WHERE ID_PRODUCTO = NEW.ID_PRODUCTO;
+    -- Registrar en kardex
+    INSERT INTO kardex (
+        id_producto,
+        fecha_movimiento,
+        tipo_movimiento,
+        origen,
+        id_referencia,
+        cantidad,
+        costo_unitario,
+        comentario
+    )
+    VALUES (
+        NEW.id_producto,
+        NOW(),
+        'ENTRADA',
+        'COMPRA',
+        NEW.id_compra,
+        NEW.cantidad_compra,
+        NEW.costo_unitario,
+        'Ingreso por compra'
+    );
 
-    INSERT INTO KARDEX(ID_PRODUCTO, ID_COMPRA, TIPO_MOVIMIENTO, INGRESO, EGRESO, COSTO_UNITARIO, COSTO_TOTAL, VALOR_MOVIMIENTO)
-    VALUES (NEW.ID_PRODUCTO, NEW.ID_COMPRA, 'ENTRADA', v_delta, 0, v_costo, v_delta*v_costo, v_delta*v_costo);
+    -- Recalcular totales de la compra
+    PERFORM fn_recalcular_totales_compra(NEW.id_compra);
 
-    PERFORM fn_recalc_total_compra(NEW.ID_COMPRA);
     RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-  ELSIF TG_OP = 'UPDATE' THEN
-    v_delta := NEW.CANTIDAD_COMPRA - OLD.CANTIDAD_COMPRA; v_costo := NEW.COSTO_UNITARIO;
+CREATE TRIGGER producto_compra_ai
+AFTER INSERT ON producto_compra
+FOR EACH ROW
+EXECUTE FUNCTION trg_producto_compra_after_insert();
 
-    UPDATE PRODUCTO
-       SET CANTIDAD_STOCK = CANTIDAD_STOCK + v_delta
-     WHERE ID_PRODUCTO = NEW.ID_PRODUCTO;
 
-    IF v_delta <> 0 THEN
-      INSERT INTO KARDEX(ID_PRODUCTO, ID_COMPRA, TIPO_MOVIMIENTO, INGRESO, EGRESO, COSTO_UNITARIO, COSTO_TOTAL, VALOR_MOVIMIENTO)
-      VALUES (
-        NEW.ID_PRODUCTO, NEW.ID_COMPRA,
-        CASE WHEN v_delta > 0 THEN 'ENTRADA' ELSE 'SALIDA' END,
-        CASE WHEN v_delta > 0 THEN v_delta ELSE 0 END,
-        CASE WHEN v_delta < 0 THEN ABS(v_delta) ELSE 0 END,
-        v_costo, ABS(v_delta)*v_costo, ABS(v_delta)*v_costo
-      );
+/*---- 12.4 Trigger: al insertar detalle_factura ---------------*/
+/*     - Verifica stock suficiente                              */
+/*     - Actualiza stock del producto                           */
+/*     - Inserta movimiento SALIDA en KARDEX                    */
+/*     - Recalcula totales de la factura                        */
+
+CREATE OR REPLACE FUNCTION trg_detalle_factura_after_insert()
+RETURNS TRIGGER AS
+$$
+DECLARE
+    v_stock_actual INT;
+BEGIN
+    SELECT cantidad_stock
+    INTO v_stock_actual
+    FROM producto
+    WHERE id_producto = NEW.id_producto
+    FOR UPDATE;
+
+    IF v_stock_actual IS NULL THEN
+        RAISE EXCEPTION 'Producto % no existe', NEW.id_producto;
     END IF;
 
-    PERFORM fn_recalc_total_compra(NEW.ID_COMPRA);
-    RETURN NEW;
-
-  ELSIF TG_OP = 'DELETE' THEN
-    UPDATE PRODUCTO
-       SET CANTIDAD_STOCK = CANTIDAD_STOCK - OLD.CANTIDAD_COMPRA
-     WHERE ID_PRODUCTO = OLD.ID_PRODUCTO;
-
-    IF (SELECT CANTIDAD_STOCK FROM PRODUCTO WHERE ID_PRODUCTO = OLD.ID_PRODUCTO) < 0 THEN
-      RAISE EXCEPTION 'Stock negativo al revertir compra para producto %', OLD.ID_PRODUCTO;
+    IF v_stock_actual < NEW.cantidad THEN
+        RAISE EXCEPTION 'Stock insuficiente para el producto %: stock actual %, cantidad solicitada %',
+            NEW.id_producto, v_stock_actual, NEW.cantidad;
     END IF;
 
-    INSERT INTO KARDEX(ID_PRODUCTO, ID_COMPRA, TIPO_MOVIMIENTO, INGRESO, EGRESO, COSTO_UNITARIO, COSTO_TOTAL, VALOR_MOVIMIENTO)
-    VALUES (OLD.ID_PRODUCTO, OLD.ID_COMPRA, 'SALIDA', 0, OLD.CANTIDAD_COMPRA, OLD.COSTO_UNITARIO, OLD.CANTIDAD_COMPRA*OLD.COSTO_UNITARIO, OLD.CANTIDAD_COMPRA*OLD.COSTO_UNITARIO);
+    -- Descontar stock
+    UPDATE producto
+    SET cantidad_stock = cantidad_stock - NEW.cantidad
+    WHERE id_producto = NEW.id_producto;
 
-    PERFORM fn_recalc_total_compra(OLD.ID_COMPRA);
-    RETURN OLD;
-  END IF;
-  RETURN NULL;
-END; $$ LANGUAGE plpgsql;
+    -- Registrar en kardex
+    INSERT INTO kardex (
+        id_producto,
+        fecha_movimiento,
+        tipo_movimiento,
+        origen,
+        id_referencia,
+        cantidad,
+        costo_unitario,
+        comentario
+    )
+    VALUES (
+        NEW.id_producto,
+        NOW(),
+        'SALIDA',
+        'VENTA',
+        NEW.id_factura,
+        NEW.cantidad,
+        NEW.precio_unitario,
+        'Salida por venta'
+    );
 
-CREATE TRIGGER trg_pc_ai_stock
-AFTER INSERT ON PRODUCTO_COMPRA
-FOR EACH ROW EXECUTE FUNCTION tg_pc_stock_kardex();
+    -- Recalcular totales de la factura
+    PERFORM fn_recalcular_totales_factura(NEW.id_factura);
 
-CREATE TRIGGER trg_pc_au_stock
-AFTER UPDATE ON PRODUCTO_COMPRA
-FOR EACH ROW EXECUTE FUNCTION tg_pc_stock_kardex();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trg_pc_ad_stock
-AFTER DELETE ON PRODUCTO_COMPRA
-FOR EACH ROW EXECUTE FUNCTION tg_pc_stock_kardex();
+CREATE TRIGGER detalle_factura_ai
+AFTER INSERT ON detalle_factura
+FOR EACH ROW
+EXECUTE FUNCTION trg_detalle_factura_after_insert();
 
-/* ==============================================================
-   VISTAS ÚTILES (opcionales)
-   ============================================================== */
-CREATE OR REPLACE VIEW vw_stock AS
-SELECT p.ID_PRODUCTO, p.NOMBRE_PRODUCTO, p.CANTIDAD_STOCK, p.PRECIO
-FROM PRODUCTO p;
-
-CREATE OR REPLACE VIEW vw_factura_detalle AS
-SELECT f.ID_FACTURA, f.FECHA, c.NOMBRE AS CLIENTE, p.NOMBRE_PRODUCTO,
-       d.CANT_PRODUCTO, d.PRECIO_UNITARIO, d.PRECIO_TOTAL
-FROM FACTURA f
-JOIN DETALLE_FACTURA d ON d.ID_FACTURA = f.ID_FACTURA
-JOIN PRODUCTO p ON p.ID_PRODUCTO = d.ID_PRODUCTO
-LEFT JOIN CLIENTE c ON c.ID_CLIENTE = f.ID_CLIENTE;
+/*==============================================================*/
+/*  FIN DEL SCRIPT                                              */
+/*==============================================================*/

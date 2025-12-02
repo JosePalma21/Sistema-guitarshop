@@ -1,3 +1,4 @@
+// guitarshop-backend/app/api/clientes/[id]/route.ts
 import { jsonCors, optionsCors } from "../../../../lib/cors";
 import { verifyToken } from "../../../../lib/auth";
 import {
@@ -18,77 +19,106 @@ function getIdFromUrl(req: Request): number | null {
   return Number.isNaN(id) ? null : id;
 }
 
-// GET /api/cliente/:id
+// GET /api/clientes/:id
 export async function GET(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid) {
-    return jsonCors({ error: "No autorizado" }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
   const id = getIdFromUrl(req);
-  if (!id) return jsonCors({ error: "ID inválido" }, { status: 400 });
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
   try {
     const cliente = await obtenerClientePorId(id);
-    if (!cliente)
+    if (!cliente) {
       return jsonCors({ error: "Cliente no encontrado" }, { status: 404 });
+    }
 
     return jsonCors(cliente, { status: 200 });
   } catch (error) {
-    console.error("Error al obtener cliente:", error);
-    return jsonCors({ error: "Error interno del servidor" }, { status: 500 });
+    console.error("Error GET /clientes/:id", error);
+    return jsonCors(
+      { error: "Error al obtener cliente" },
+      { status: 500 }
+    );
   }
 }
 
-// PUT /api/cliente/:id
+// PUT /api/clientes/:id
 export async function PUT(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid) {
-    return jsonCors({ error: "No autorizado" }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
   const id = getIdFromUrl(req);
-  if (!id) return jsonCors({ error: "ID inválido" }, { status: 400 });
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
   try {
     const body = await req.json();
 
-    const actualizado = await actualizarCliente(id, {
-      nombre: body.nombre,
+    const cliente = await actualizarCliente(id, {
+      nombres: body.nombres,
+      apellidos: body.apellidos,
       cedula: body.cedula,
       correo: body.correo,
       telefono: body.telefono,
       direccion: body.direccion,
-      id_estado: body.id_estado,
-      id_usuario_modifi: body.id_usuario_modifi,
-      fecha: body.fecha,
+      id_usuario_modifi: auth.userId ?? null,
     });
 
-    return jsonCors(actualizado, { status: 200 });
-  } catch (error) {
-    console.error("Error al actualizar cliente:", error);
-    return jsonCors({ error: "Error interno del servidor" }, { status: 500 });
+    return jsonCors(cliente, { status: 200 });
+  } catch (error: any) {
+    console.error("Error PUT /clientes/:id", error);
+
+    if (error instanceof Error && error.message === "CLIENTE_DUPLICADO") {
+      return jsonCors(
+        { error: "La cédula o correo ya están registrados para otro cliente" },
+        { status: 400 }
+      );
+    }
+
+    return jsonCors(
+      { error: "Error al actualizar cliente" },
+      { status: 500 }
+    );
   }
 }
 
-// DELETE /api/cliente/:id
+// DELETE /api/clientes/:id
 export async function DELETE(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid) {
-    return jsonCors({ error: "No autorizado" }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
   const id = getIdFromUrl(req);
-  if (!id) return jsonCors({ error: "ID inválido" }, { status: 400 });
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
 
   try {
-    await eliminarCliente(id);
-    return jsonCors(
-      { message: "Cliente eliminado correctamente" },
-      { status: 200 }
-    );
+    const cliente = await eliminarCliente(id);
+    return jsonCors(cliente, { status: 200 });
   } catch (error) {
-    console.error("Error al eliminar cliente:", error);
-    return jsonCors({ error: "Error interno del servidor" }, { status: 500 });
+    console.error("Error DELETE /clientes/:id", error);
+    return jsonCors(
+      { error: "Error al eliminar cliente" },
+      { status: 500 }
+    );
   }
 }

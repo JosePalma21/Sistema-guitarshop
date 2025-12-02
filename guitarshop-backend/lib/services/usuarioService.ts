@@ -1,95 +1,149 @@
 import prisma from "../prisma";
-import bcrypt from "bcryptjs";
+import { Prisma } from "../../generated/prisma/client";
+import { hashPassword } from "./authService";
 
-export interface UsuarioCreateInput {
-  nombre: string;
+// Campos que vamos a devolver al frontend (sin password_hash)
+const usuarioSelect = {
+  id_usuario: true,
+  nombre_completo: true,
+  correo: true,
+  telefono: true,
+  direccion: true,
+  cedula: true,
+  rol: true,
+  fecha_creacion: true, // 
+  id_estado: true,
+} as const;
+
+// ==========================
+// LISTAR USUARIOS
+// ==========================
+export async function obtenerUsuarios() {
+  const usuarios = await prisma.usuario.findMany({
+    where: { id_estado: 1 }, // solo activos (puedes quitar este filtro si quieres ver todos)
+    select: usuarioSelect,
+    orderBy: { id_usuario: "asc" },
+  });
+
+  return usuarios;
+}
+
+// ==========================
+// OBTENER POR ID
+// ==========================
+export async function obtenerUsuarioPorId(id: number) {
+  const usuario = await prisma.usuario.findUnique({
+    where: { id_usuario: id },
+    select: usuarioSelect,
+  });
+
+  return usuario; // puede ser null
+}
+
+// ==========================
+// CREAR USUARIO
+// ==========================
+export async function crearUsuario(data: {
+  nombre_completo: string;
   correo: string;
-  telefono: string;
-  direccion: string;
-  cedula: string;
-  contrasena: string;
-  id_estado: number;
+  telefono?: string | null;
+  direccion?: string | null;
+  cedula?: string | null;
+  rol?: string;
+  password: string;
   id_usuario_modifi?: number | null;
+}) {
+  const password_hash = await hashPassword(data.password);
+
+  try {
+    const usuario = await prisma.usuario.create({
+      data: {
+        nombre_completo: data.nombre_completo,
+        correo: data.correo,
+        telefono: data.telefono ?? null,
+        direccion: data.direccion ?? null,
+        cedula: data.cedula ?? null,
+        rol: data.rol ?? "VENDEDOR",
+        password_hash,
+        // fecha_creacion se pone sola por default
+        // id_estado default = 1 (activo)
+        id_usuario_modifi: data.id_usuario_modifi ?? null,
+      },
+      select: usuarioSelect,
+    });
+
+    return usuario;
+  } catch (error: any) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      // unique constraint (correo o cedula)
+      throw new Error("CORREO_O_CEDULA_DUPLICADO");
+    }
+    throw error;
+  }
 }
 
-export interface UsuarioUpdateInput {
-  nombre?: string;
-  correo?: string;
-  telefono?: string;
-  direccion?: string;
-  cedula?: string;
-  id_estado?: number;
-  id_usuario_modifi?: number | null;
+// ==========================
+// ACTUALIZAR USUARIO
+// ==========================
+export async function actualizarUsuario(
+  id: number,
+  data: {
+    nombre_completo?: string;
+    correo?: string;
+    telefono?: string | null;
+    direccion?: string | null;
+    cedula?: string | null;
+    rol?: string;
+    password?: string;
+    id_usuario_modifi?: number | null;
+  }
+) {
+  const updateData: any = {};
+
+  if (data.nombre_completo !== undefined)
+    updateData.nombre_completo = data.nombre_completo;
+  if (data.correo !== undefined) updateData.correo = data.correo;
+  if (data.telefono !== undefined) updateData.telefono = data.telefono;
+  if (data.direccion !== undefined) updateData.direccion = data.direccion;
+  if (data.cedula !== undefined) updateData.cedula = data.cedula;
+  if (data.rol !== undefined) updateData.rol = data.rol;
+  if (data.id_usuario_modifi !== undefined)
+    updateData.id_usuario_modifi = data.id_usuario_modifi;
+
+  if (data.password) {
+    updateData.password_hash = await hashPassword(data.password);
+  }
+
+  try {
+    const usuario = await prisma.usuario.update({
+      where: { id_usuario: id },
+      data: updateData,
+      select: usuarioSelect,
+    });
+
+    return usuario;
+  } catch (error: any) {
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === "P2002"
+    ) {
+      throw new Error("CORREO_O_CEDULA_DUPLICADO");
+    }
+    throw error;
+  }
 }
 
-// 🔹 listar todos (sin contraseña)
-export async function getAllUsuarios() {
-  return prisma.usuario.findMany({
-    select: {
-      id_usuario: true,
-      nombre: true,
-      correo: true,
-      telefono: true,
-      direccion: true,
-      cedula: true,
-      id_estado: true,
-    },
+// ==========================
+// ELIMINAR USUARIO
+// ==========================
+export async function eliminarUsuario(id: number) {
+  const usuario = await prisma.usuario.delete({
+    where: { id_usuario: id },  
+    select: usuarioSelect,
   });
-}
 
-// 🔹 buscar por id (sin contraseña)
-export async function getUsuarioById(id: number) {
-  return prisma.usuario.findUnique({
-    where: { id_usuario: id },
-    select: {
-      id_usuario: true,
-      nombre: true,
-      correo: true,
-      telefono: true,
-      direccion: true,
-      cedula: true,
-      id_estado: true,
-    },
-  });
-}
-
-// 🔹 crear (hasheando contraseña)
-export async function createUsuario(data: UsuarioCreateInput) {
-  const hashedPassword = await bcrypt.hash(data.contrasena, 10);
-
-  return prisma.usuario.create({
-    data: {
-      nombre: data.nombre,
-      correo: data.correo,
-      telefono: data.telefono,
-      direccion: data.direccion,
-      cedula: data.cedula,
-      contrasena: hashedPassword,
-      id_estado: data.id_estado,
-      id_usuario_modifi: data.id_usuario_modifi ?? null,
-    },
-  });
-}
-
-// 🔹 actualizar
-export async function updateUsuario(id: number, data: UsuarioUpdateInput) {
-  return prisma.usuario.update({
-    where: { id_usuario: id },
-    data: {
-      nombre: data.nombre,
-      correo: data.correo,
-      telefono: data.telefono,
-      direccion: data.direccion,
-      cedula: data.cedula,
-      id_estado: data.id_estado,
-      id_usuario_modifi: data.id_usuario_modifi ?? null,
-    },
-  });
-}
-
-// 🔹 eliminar
-export async function deleteUsuario(id: number) {
-  return prisma.usuario.delete({
-    where: { id_usuario: id },
-  });
+  return usuario;
 }

@@ -1,68 +1,73 @@
+// guitarshop-backend/app/api/proveedores/route.ts
 import { jsonCors, optionsCors } from "../../../lib/cors";
 import { verifyToken } from "../../../lib/auth";
-
 import {
-  getAllProveedores,
-  createProveedor,
-  type ProveedorCreateInput,
+  listarProveedores,
+  crearProveedor,
 } from "../../../lib/services/proveedorService";
 
 export async function OPTIONS() {
   return optionsCors();
 }
 
-// GET /api/proveedores  -> lista todos
-export async function GET(request: Request) {
-  const validation = verifyToken(request);
-  if (!validation.valid) {
-    return jsonCors({ error: validation.message }, { status: 401 });
+// GET /api/proveedores
+export async function GET(req: Request) {
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
-  const proveedores = await getAllProveedores();
-  return jsonCors(proveedores);
+  try {
+    const proveedores = await listarProveedores();
+    return jsonCors(proveedores, { status: 200 });
+  } catch (error) {
+    console.error("Error GET /proveedores:", error);
+    return jsonCors(
+      { error: "Error al obtener proveedores" },
+      { status: 500 }
+    );
+  }
 }
 
-// POST /api/proveedores -> crear
-export async function POST(request: Request) {
+// POST /api/proveedores
+export async function POST(req: Request) {
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
+
   try {
-    const body = (await request.json()) as Partial<ProveedorCreateInput>;
+    const body = await req.json();
 
-    // Validaciones mínimas
-    if (!body.nombre_proveedor) {
+    const proveedor = await crearProveedor({
+      nombre_proveedor: body.nombre_proveedor,
+      ruc_cedula: body.ruc_cedula,
+      correo: body.correo ?? null,
+      telefono: body.telefono ?? null,
+      direccion: body.direccion ?? null,
+      id_usuario_modifi: auth.userId ?? null,
+    });
+
+    return jsonCors(proveedor, { status: 201 });
+  } catch (error: any) {
+    console.error("Error POST /proveedores:", error);
+
+    if (error instanceof Error && error.message === "PROVEEDOR_DUPLICADO") {
       return jsonCors(
-        { message: "El nombre del proveedor es obligatorio" },
-        { status: 400 }
-      );
-    }
-    if (!body.telefono) {
-      return jsonCors(
-        { message: "El teléfono es obligatorio" },
-        { status: 400 }
-      );
-    }
-    if (!body.correo) {
-      return jsonCors(
-        { message: "El correo es obligatorio" },
-        { status: 400 }
-      );
-    }
-    if (!body.direccion) {
-      return jsonCors(
-        { message: "La dirección es obligatoria" },
-        { status: 400 }
-      );
-    }
-    if (body.id_estado === undefined || body.id_estado === null) {
-      return jsonCors(
-        { message: "El id_estado es obligatorio" },
+        { error: "El RUC/Cédula ya está registrado para otro proveedor" },
         { status: 400 }
       );
     }
 
-    const nuevoProveedor = await createProveedor(body as ProveedorCreateInput);
-    return jsonCors(nuevoProveedor, { status: 201 });
-  } catch (error) {
-    console.error("Error al crear proveedor:", error);
-    return jsonCors({ message: "Error al crear proveedor" }, { status: 500 });
+    return jsonCors(
+      { error: "Error al crear proveedor" },
+      { status: 500 }
+    );
   }
 }

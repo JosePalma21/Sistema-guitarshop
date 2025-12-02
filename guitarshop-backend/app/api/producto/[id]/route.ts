@@ -1,9 +1,16 @@
-// app/api/productos/[id]/route.ts
-import prisma from "../../../../lib/prisma";
+// guitarshop-backend/app/api/productos/[id]/route.ts
 import { jsonCors, optionsCors } from "../../../../lib/cors";
 import { verifyToken } from "../../../../lib/auth";
+import {
+  obtenerProductoPorId,
+  actualizarProducto,
+  eliminarProducto,
+} from "../../../../lib/services/productoService";
 
-// Extraer ID desde la URL
+export async function OPTIONS() {
+  return optionsCors();
+}
+
 function getIdFromUrl(req: Request): number | null {
   const url = new URL(req.url);
   const parts = url.pathname.split("/");
@@ -12,121 +19,118 @@ function getIdFromUrl(req: Request): number | null {
   return Number.isNaN(id) ? null : id;
 }
 
-export async function OPTIONS() {
-  return optionsCors();
-}
-
-/* ============================================================
-   GET /api/productos/:id
-   ============================================================ */
+// GET /api/productos/:id
 export async function GET(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid) {
-    return jsonCors({ error: validation.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
   const id = getIdFromUrl(req);
-  if (id == null) {
-    return jsonCors({ message: "ID inválido" }, { status: 400 });
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
   }
 
   try {
-    const productoDB = await prisma.producto.findUnique({
-      where: { id_producto: id },
-    });
-
-    if (!productoDB) {
-      return jsonCors({ message: "Producto no encontrado" }, { status: 404 });
+    const producto = await obtenerProductoPorId(id);
+    if (!producto) {
+      return jsonCors({ error: "Producto no encontrado" }, { status: 404 });
     }
 
-    // Convertir Decimal --> Number
-    const producto = {
-      ...productoDB,
-      precio: Number(productoDB.precio),
-    };
-
-    return jsonCors(producto);
+    return jsonCors(producto, { status: 200 });
   } catch (error) {
-    console.error("Error GET /productos/:id:", error);
+    console.error("Error GET /productos/:id", error);
     return jsonCors(
-      { message: "Error al obtener producto", error: String(error) },
+      { error: "Error al obtener producto" },
       { status: 500 }
     );
   }
 }
 
-/* ============================================================
-   PUT /api/productos/:id
-   ============================================================ */
+// PUT /api/productos/:id
 export async function PUT(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid) {
-    return jsonCors({ error: validation.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
   const id = getIdFromUrl(req);
-  if (id == null) {
-    return jsonCors({ message: "ID inválido" }, { status: 400 });
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
   }
 
   try {
     const body = await req.json();
 
-    const updated = await prisma.producto.update({
-      where: { id_producto: id },
-      data: {
-        id_proveedor:
-          body.id_proveedor !== undefined ? Number(body.id_proveedor) : undefined,
-        nombre_producto:
-          body.nombre_producto !== undefined ? String(body.nombre_producto) : undefined,
-        descripcion: body.descripcion ?? undefined,
-        precio: body.precio !== undefined ? Number(body.precio) : undefined,
-        cantidad_stock:
-          body.cantidad_stock !== undefined ? Number(body.cantidad_stock) : undefined,
-        foto: body.foto ?? undefined,
-        fecha: body.fecha ? new Date(body.fecha) : undefined,
-        id_estado: body.id_estado !== undefined ? Number(body.id_estado) : undefined,
-        id_usuario_modifi:
-          body.id_usuario_modifi !== undefined ? Number(body.id_usuario_modifi) : undefined,
-      },
+    const producto = await actualizarProducto(id, {
+      codigo_producto: body.codigo_producto,
+      nombre_producto: body.nombre_producto,
+      descripcion: body.descripcion,
+      id_proveedor: body.id_proveedor,
+      precio_compra: body.precio_compra,
+      precio_venta: body.precio_venta,
+      cantidad_stock: body.cantidad_stock,
+      stock_minimo: body.stock_minimo,
+      id_usuario_modifi: auth.userId ?? null,
     });
 
-    const response = { ...updated, precio: Number(updated.precio) };
+    return jsonCors(producto, { status: 200 });
+  } catch (error: any) {
+    console.error("Error PUT /productos/:id", error);
 
-    return jsonCors(response);
-  } catch (error) {
-    console.error("Error PUT /productos/:id:", error);
+    if (error instanceof Error && error.message === "PRODUCTO_DUPLICADO") {
+      return jsonCors(
+        { error: "El código de producto ya está registrado" },
+        { status: 400 }
+      );
+    }
+
     return jsonCors(
-      { message: "Error al actualizar producto", error: String(error) },
+      { error: "Error al actualizar producto" },
       { status: 500 }
     );
   }
 }
 
-/* ============================================================
-   DELETE /api/productos/:id
-   ============================================================ */
+// DELETE /api/productos/:id
 export async function DELETE(req: Request) {
-  const validation = verifyToken(req);
-  if (!validation.valid) {
-    return jsonCors({ error: validation.error }, { status: 401 });
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
   }
 
   const id = getIdFromUrl(req);
-  if (id == null) {
-    return jsonCors({ message: "ID inválido" }, { status: 400 });
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
   }
 
   try {
-    await prisma.producto.delete({
-      where: { id_producto: id },
-    });
+    const producto = await eliminarProducto(id);
+    return jsonCors(producto, { status: 200 });
+  } catch (error: any) {
+    console.error("Error DELETE /productos/:id", error);
 
-    return jsonCors({ message: "Producto eliminado correctamente" });
-  } catch (error) {
-    console.error("Error DELETE /productos/:id:", error);
+    if (error instanceof Error && error.message === "PRODUCTO_CON_RELACIONES") {
+      return jsonCors(
+        {
+          error:
+            "No se puede eliminar el producto porque tiene compras, ventas o movimientos de kardex asociados.",
+        },
+        { status: 409 }
+      );
+    }
+
     return jsonCors(
-      { message: "Error al eliminar producto", error: String(error) },
+      { error: "Error al eliminar producto" },
       { status: 500 }
     );
   }

@@ -1,27 +1,130 @@
-import { NextResponse } from 'next/server';
-import prisma from '../../../../lib/prisma';
+// guitarshop-backend/app/api/cuota/[id]/route.ts
+import { jsonCors, optionsCors } from "../../../../lib/cors";
+import { verifyToken } from "../../../../lib/auth";
+import {
+  obtenerCuotaDetallePorId,
+  pagarCuota,
+} from "../../../../lib/services/cuotaService";
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const cuota = await prisma.cuota.findUnique({
-    where: { id_cuota: params.id },
-    include: { credito: true },
-  });
-
-  return cuota
-    ? NextResponse.json(cuota)
-    : NextResponse.json({ error: 'Cuota no encontrada' }, { status: 404 });
+export async function OPTIONS() {
+  return optionsCors();
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const body = await request.json();
-  const actualizada = await prisma.cuota.update({
-    where: { id_cuota: params.id },
-    data: body,
-  });
-  return NextResponse.json(actualizada);
+function getIdFromUrl(req: Request): number | null {
+  const url = new URL(req.url);
+  const parts = url.pathname.split("/");
+  const idString = parts[parts.length - 1];
+  const id = Number(idString);
+  return Number.isNaN(id) ? null : id;
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  await prisma.cuota.delete({ where: { id_cuota: params.id } });
-  return NextResponse.json({ mensaje: 'Cuota eliminada' });
+// GET /api/cuota/:id  -> info de una cuota
+export async function GET(req: Request) {
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
+
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
+
+  try {
+    const cuota = await obtenerCuotaDetallePorId(id);
+    if (!cuota) {
+      return jsonCors(
+        { error: "Cuota no encontrada" },
+        { status: 404 }
+      );
+    }
+
+    return jsonCors(cuota, { status: 200 });
+  } catch (err) {
+    console.error("Error GET /cuota/:id", err);
+    return jsonCors(
+      { error: "Error al obtener cuota" },
+      { status: 500 }
+    );
+  }
+}
+
+// PATCH /api/cuota/:id  -> pagar cuota
+export async function PATCH(req: Request) {
+  const auth = verifyToken(req);
+  if (!auth.valid || !auth.userId) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
+
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
+
+  try {
+    const body = await req.json();
+    const montoPago = Number(body.monto_pago);
+
+    if (!body.monto_pago || isNaN(montoPago)) {
+      return jsonCors(
+        { error: "monto_pago es obligatorio y debe ser numérico" },
+        { status: 400 }
+      );
+    }
+
+    const resultado = await pagarCuota({
+      id_cuota: id,
+      montoPago,
+      id_usuario_modifi: auth.userId,
+    });
+
+    return jsonCors(
+      {
+        message: "Pago registrado correctamente",
+        cuota: resultado.cuota,
+        credito: resultado.credito,
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error("Error PATCH /cuota/:id", error);
+
+    if (error instanceof Error) {
+      if (error.message === "CUOTA_NO_ENCONTRADA") {
+        return jsonCors(
+          { error: "Cuota no encontrada" },
+          { status: 404 }
+        );
+      }
+      if (error.message === "CUOTA_YA_PAGADA") {
+        return jsonCors(
+          { error: "La cuota ya está pagada" },
+          { status: 400 }
+        );
+      }
+      if (error.message === "MONTO_INVALIDO") {
+        return jsonCors(
+          { error: "El monto debe ser mayor a 0" },
+          { status: 400 }
+        );
+      }
+      if (error.message === "MONTO_SUPERA_SALDO_CUOTA") {
+        return jsonCors(
+          { error: "El monto supera el saldo pendiente de la cuota" },
+          { status: 400 }
+        );
+      }
+    }
+
+    return jsonCors(
+      { error: "Error al registrar el pago de la cuota" },
+      { status: 500 }
+    );
+  }
 }

@@ -1,31 +1,50 @@
-import { NextResponse } from 'next/server';
-import prisma from '../../../../lib/prisma';
+// guitarshop-backend/app/api/credito/[id]/route.ts
+import { jsonCors, optionsCors } from "../../../../lib/cors";
+import { verifyToken } from "../../../../lib/auth";
+import { obtenerCreditoPorId } from "../../../../lib/services/creditoService";
 
-export async function GET(_: Request, { params }: { params: { id: string } }) {
-  const credito = await prisma.credito.findUnique({
-    where: { id_credito: Number(params.id) },
-    include: {
-      cliente: true,
-      factura: true,
-      cuota: true,
-    },
-  });
-
-  return credito
-    ? NextResponse.json(credito)
-    : NextResponse.json({ error: 'Crédito no encontrado' }, { status: 404 });
+export async function OPTIONS() {
+  return optionsCors();
 }
 
-export async function PUT(request: Request, { params }: { params: { id: string } }) {
-  const body = await request.json();
-  const actualizado = await prisma.credito.update({
-    where: { id_credito: Number(params.id) },
-    data: body,
-  });
-  return NextResponse.json(actualizado);
+function getIdFromUrl(req: Request): number | null {
+  const url = new URL(req.url);
+  const parts = url.pathname.split("/");
+  const idString = parts[parts.length - 1];
+  const id = Number(idString);
+  return Number.isNaN(id) ? null : id;
 }
 
-export async function DELETE(_: Request, { params }: { params: { id: string } }) {
-  await prisma.credito.delete({ where: { id_credito: Number(params.id) } });
-  return NextResponse.json({ mensaje: 'Crédito eliminado' });
+// GET /api/credito/:id
+export async function GET(req: Request) {
+  const auth = verifyToken(req);
+  if (!auth.valid) {
+    return jsonCors(
+      { error: auth.message ?? "Token inválido" },
+      { status: 401 }
+    );
+  }
+
+  const id = getIdFromUrl(req);
+  if (!id) {
+    return jsonCors({ error: "ID inválido" }, { status: 400 });
+  }
+
+  try {
+    const credito = await obtenerCreditoPorId(id);
+    if (!credito) {
+      return jsonCors(
+        { error: "Crédito no encontrado" },
+        { status: 404 }
+      );
+    }
+
+    return jsonCors(credito, { status: 200 });
+  } catch (err) {
+    console.error("Error GET /credito/:id", err);
+    return jsonCors(
+      { error: "Error al obtener el crédito" },
+      { status: 500 }
+    );
+  }
 }

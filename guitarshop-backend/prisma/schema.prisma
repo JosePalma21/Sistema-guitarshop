@@ -1,224 +1,239 @@
-generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
-}
+  generator client {
+    provider = "prisma-client"
+    output   = "../generated/prisma"
+  }
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+  datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+  }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model cliente {
-  id_cliente        Int       @id @default(autoincrement())
-  nombre            String    @db.VarChar(60)
-  cedula            String    @unique @db.VarChar(15)
-  correo            String    @unique @db.VarChar(60)
-  telefono          String    @db.VarChar(20)
-  direccion         String    @db.VarChar(100)
-  fecha             DateTime  @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime  @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  credito           credito[]
-  factura           factura[]
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model cliente {
+    id_cliente        Int             @id @default(autoincrement())
+    nombres           String          @db.VarChar(60)
+    apellidos         String          @db.VarChar(60)
+    cedula            String          @unique @db.VarChar(10)
+    correo            String?         @db.VarChar(120)
+    telefono          String?         @db.VarChar(20)
+    direccion         String?         @db.VarChar(150)
+    fecha_registro    DateTime        @default(now()) @db.Timestamp(6)
+    id_estado         Int             @default(1)
+    id_usuario_modifi Int?
+    estado_registro   estado_registro @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_cliente_estado")
+    usuario           usuario?        @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_cliente_usuario_modifi")
+    factura           factura[]
+  }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model compra {
-  id_compra         Int               @id @default(autoincrement())
-  id_proveedor      Int
-  id_usuario        Int
-  fecha             DateTime          @default(now()) @db.Timestamptz(6)
-  total_compra      Decimal           @default(0) @db.Decimal(12, 2)
-  fecha_creacion    DateTime          @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  proveedor         proveedor         @relation(fields: [id_proveedor], references: [id_proveedor], onUpdate: Restrict, map: "fk_compra_proveedor")
-  usuario           usuario           @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_compra_usuario")
-  kardex            kardex[]
-  producto_compra   producto_compra[]
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model compra {
+    id_compra                                 Int               @id @default(autoincrement())
+    fecha_compra                              DateTime          @default(now()) @db.Timestamp(6)
+    id_proveedor                              Int
+    id_usuario                                Int
+    observacion                               String?           @db.VarChar(255)
+    subtotal                                  Decimal           @default(0) @db.Decimal(12, 2)
+    impuesto                                  Decimal           @default(0) @db.Decimal(12, 2)
+    total                                     Decimal           @default(0) @db.Decimal(12, 2)
+    id_estado                                 Int               @default(1)
+    id_usuario_modifi                         Int?
+    estado_registro                           estado_registro   @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_compra_estado")
+    proveedor                                 proveedor         @relation(fields: [id_proveedor], references: [id_proveedor], onDelete: NoAction, onUpdate: NoAction, map: "fk_compra_proveedor")
+    usuario                                   usuario           @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction, map: "fk_compra_usuario")
+    usuario_compra_id_usuario_modifiTousuario usuario?          @relation("compra_id_usuario_modifiTousuario", fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_compra_usuario_modifi")
+    producto_compra                           producto_compra[]
+  }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model credito {
-  id_credito        Int      @id @default(autoincrement())
-  id_factura        Int
-  id_cuota          String   @db.VarChar(10)
-  id_cliente        Int
-  deuda             Decimal  @db.Decimal(12, 2)
-  fecha             DateTime @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  cliente           cliente  @relation(fields: [id_cliente], references: [id_cliente], onUpdate: Restrict, map: "fk_credito_cliente")
-  cuota             cuota    @relation(fields: [id_cuota], references: [id_cuota], onUpdate: Restrict, map: "fk_credito_cuota")
-  factura           factura  @relation(fields: [id_factura], references: [id_factura], onUpdate: Restrict, map: "fk_credito_factura")
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model credito {
+    id_credito        Int             @id @default(autoincrement())
+    id_factura        Int
+    monto_total       Decimal         @db.Decimal(12, 2)
+    saldo_pendiente   Decimal         @db.Decimal(12, 2)
+    fecha_inicio      DateTime        @db.Date
+    fecha_fin         DateTime?       @db.Date
+    id_estado         Int             @default(1)
+    id_usuario_modifi Int?
+    estado_registro   estado_registro @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_credito_estado")
+    factura           factura         @relation(fields: [id_factura], references: [id_factura], onDelete: NoAction, onUpdate: NoAction, map: "fk_credito_factura")
+    usuario           usuario?        @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_credito_usuario_modifi")
+    cuota             cuota[]
+  }
 
-model cuota {
-  id_cuota          String    @id @db.VarChar(10)
-  num_cuota         String    @db.VarChar(10)
-  fecha             DateTime  @db.Date
-  fecha_creacion    DateTime  @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  credito           credito[]
-}
+  model cuota {
+    id_cuota          Int       @id @default(autoincrement())
+    id_credito        Int
+    numero_cuota      Int
+    fecha_vencimiento DateTime  @db.Date
+    monto_cuota       Decimal   @db.Decimal(12, 2)
+    monto_pagado      Decimal   @default(0) @db.Decimal(12, 2)
+    estado_cuota      String    @default("PENDIENTE") @db.VarChar(20)
+    fecha_pago        DateTime? @db.Date
+    id_usuario_modifi Int?
+    credito           credito   @relation(fields: [id_credito], references: [id_credito], onDelete: Cascade, onUpdate: NoAction, map: "fk_cuota_credito")
+    usuario           usuario?  @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_cuota_usuario_modifi")
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model detalle_factura {
-  id_det_fact       Int      @id @default(autoincrement())
-  id_producto       Int
-  id_factura        Int
-  cant_producto     Int
-  precio_unitario   Decimal  @db.Decimal(12, 2)
-  precio_total      Decimal  @db.Decimal(12, 2)
-  fecha             DateTime @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  factura           factura  @relation(fields: [id_factura], references: [id_factura], onDelete: Cascade, onUpdate: Restrict, map: "fk_detalle_factura")
-  producto          producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_detalle_producto")
+    @@unique([id_credito, numero_cuota], map: "ux_cuota_unica")
+  }
 
-  @@index([id_factura], map: "idx_det_factura")
-  @@index([id_producto], map: "idx_det_producto")
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model detalle_factura {
+    id_detalle_factura Int             @id @default(autoincrement())
+    id_factura         Int
+    id_producto        Int
+    cantidad           Int
+    precio_unitario    Decimal         @db.Decimal(12, 2)
+    descuento          Decimal         @default(0) @db.Decimal(12, 2)
+    subtotal           Decimal         @db.Decimal(12, 2)
+    id_estado          Int             @default(1)
+    id_usuario_modifi  Int?
+    estado_registro    estado_registro @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_detalle_factura_estado")
+    factura            factura         @relation(fields: [id_factura], references: [id_factura], onDelete: Cascade, onUpdate: NoAction, map: "fk_detalle_factura")
+    producto           producto        @relation(fields: [id_producto], references: [id_producto], onDelete: NoAction, onUpdate: NoAction, map: "fk_detalle_producto")
+    usuario            usuario?        @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_detalle_factura_usuario_modifi")
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model factura {
-  id_factura        Int               @id @default(autoincrement())
-  id_cliente        Int?
-  id_usuario        Int
-  fecha             DateTime          @default(now()) @db.Timestamptz(6)
-  total_factura     Decimal           @default(0) @db.Decimal(12, 2)
-  fecha_creacion    DateTime          @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  credito           credito[]
-  detalle_factura   detalle_factura[]
-  cliente           cliente?          @relation(fields: [id_cliente], references: [id_cliente], onUpdate: Restrict, map: "fk_factura_cliente")
-  usuario           usuario           @relation(fields: [id_usuario], references: [id_usuario], onUpdate: Restrict, map: "fk_factura_usuario")
-  kardex            kardex[]
+    @@unique([id_factura, id_producto], map: "ux_detalle_factura_unico")
+  }
 
-  @@index([id_cliente], map: "idx_factura_cliente")
-  @@index([id_usuario], map: "idx_factura_usuario")
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model factura {
+    id_factura                                 Int               @id @default(autoincrement())
+    numero_factura                             String            @unique @db.VarChar(30)
+    fecha_factura                              DateTime          @default(now()) @db.Timestamp(6)
+    id_cliente                                 Int
+    id_usuario                                 Int
+    observacion                                String?           @db.VarChar(255)
+    forma_pago                                 String            @default("CONTADO") @db.VarChar(30)
+    subtotal                                   Decimal           @default(0) @db.Decimal(12, 2)
+    impuesto                                   Decimal           @default(0) @db.Decimal(12, 2)
+    total                                      Decimal           @default(0) @db.Decimal(12, 2)
+    id_estado                                  Int               @default(1)
+    id_usuario_modifi                          Int?
+    credito                                    credito[]
+    detalle_factura                            detalle_factura[]
+    cliente                                    cliente           @relation(fields: [id_cliente], references: [id_cliente], onDelete: NoAction, onUpdate: NoAction, map: "fk_factura_cliente")
+    estado_registro                            estado_registro   @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_factura_estado")
+    usuario                                    usuario           @relation(fields: [id_usuario], references: [id_usuario], onDelete: NoAction, onUpdate: NoAction, map: "fk_factura_usuario")
+    usuario_factura_id_usuario_modifiTousuario usuario?          @relation("factura_id_usuario_modifiTousuario", fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_factura_usuario_modifi")
+  }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model kardex {
-  id_kardex         Int      @id @default(autoincrement())
-  id_producto       Int
-  id_venta          Int?
-  id_compra         Int?
-  id_factura        Int?
-  tipo_movimiento   String   @db.VarChar(50)
-  ingreso           Decimal  @default(0) @db.Decimal(12, 2)
-  egreso            Decimal  @default(0) @db.Decimal(12, 2)
-  costo_unitario    Decimal  @db.Decimal(12, 2)
-  costo_total       Decimal  @db.Decimal(12, 2)
-  valor_movimiento  Decimal  @db.Decimal(12, 2)
-  fecha             DateTime @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  compra            compra?  @relation(fields: [id_compra], references: [id_compra], onUpdate: Restrict, map: "fk_kx_compra")
-  factura           factura? @relation(fields: [id_factura], references: [id_factura], onUpdate: Restrict, map: "fk_kx_factura")
-  producto          producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_kx_producto")
-  ventas            ventas?  @relation(fields: [id_venta], references: [id_venta], onUpdate: Restrict, map: "fk_kx_venta")
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model kardex {
+    id_kardex         Int             @id @default(autoincrement())
+    id_producto       Int
+    fecha_movimiento  DateTime        @default(now()) @db.Timestamp(6)
+    tipo_movimiento   String          @db.VarChar(20)
+    origen            String          @db.VarChar(20)
+    id_referencia     Int?
+    cantidad          Int
+    costo_unitario    Decimal         @db.Decimal(12, 2)
+    comentario        String?         @db.VarChar(255)
+    id_estado         Int             @default(1)
+    id_usuario_modifi Int?
+    estado_registro   estado_registro @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_kardex_estado")
+    producto          producto        @relation(fields: [id_producto], references: [id_producto], onDelete: NoAction, onUpdate: NoAction, map: "fk_kx_producto")
+    usuario           usuario?        @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_kardex_usuario_modifi")
+  }
 
-  @@index([id_compra], map: "idx_kx_compra")
-  @@index([id_factura], map: "idx_kx_factura")
-  @@index([id_producto], map: "idx_kx_prod")
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model producto {
+    id_producto       Int               @id @default(autoincrement())
+    codigo_producto   String            @unique @db.VarChar(30)
+    nombre_producto   String            @db.VarChar(100)
+    descripcion       String?           @db.VarChar(255)
+    id_proveedor      Int?
+    precio_compra     Decimal           @default(0) @db.Decimal(12, 2)
+    precio_venta      Decimal           @default(0) @db.Decimal(12, 2)
+    cantidad_stock    Int               @default(0)
+    stock_minimo      Int               @default(0)
+    fecha_creacion    DateTime          @default(now()) @db.Timestamp(6)
+    id_estado         Int               @default(1)
+    id_usuario_modifi Int?
+    detalle_factura   detalle_factura[]
+    kardex            kardex[]
+    estado_registro   estado_registro   @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_estado")
+    proveedor         proveedor?        @relation(fields: [id_proveedor], references: [id_proveedor], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_proveedor")
+    usuario           usuario?          @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_producto_usuario_modifi")
+    producto_compra   producto_compra[]
+  }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model producto {
-  id_producto       Int               @id @default(autoincrement())
-  id_proveedor      Int
-  nombre_producto   String            @db.VarChar(100)
-  descripcion       String?           @db.VarChar(255)
-  precio            Decimal           @db.Decimal(12, 2)
-  cantidad_stock    Int
-  foto              String?           @db.VarChar(254)
-  fecha             DateTime          @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime          @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  detalle_factura   detalle_factura[]
-  kardex            kardex[]
-  proveedor         proveedor         @relation(fields: [id_proveedor], references: [id_proveedor], onUpdate: Restrict, map: "fk_producto_proveedor")
-  producto_compra   producto_compra[]
-  producto_venta    producto_venta[]
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model producto_compra {
+    id_producto_compra Int             @id @default(autoincrement())
+    id_compra          Int
+    id_producto        Int
+    cantidad_compra    Int
+    costo_unitario     Decimal         @db.Decimal(12, 2)
+    subtotal           Decimal         @db.Decimal(12, 2)
+    id_estado          Int             @default(1)
+    id_usuario_modifi  Int?
+    compra             compra          @relation(fields: [id_compra], references: [id_compra], onDelete: Cascade, onUpdate: NoAction, map: "fk_pc_compra")
+    estado_registro    estado_registro @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_producto_compra_estado")
+    producto           producto        @relation(fields: [id_producto], references: [id_producto], onDelete: NoAction, onUpdate: NoAction, map: "fk_pc_producto")
+    usuario            usuario?        @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_producto_compra_usuario_modifi")
 
-  @@index([id_proveedor], map: "idx_producto_prov")
-}
+    @@unique([id_compra, id_producto], map: "ux_producto_compra_unico")
+  }
 
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model producto_compra {
-  id_producto     Int
-  id_compra       Int
-  cantidad_compra Int
-  costo_unitario  Decimal  @db.Decimal(12, 2)
-  subtotal        Decimal  @default(0) @db.Decimal(12, 2)
-  compra          compra   @relation(fields: [id_compra], references: [id_compra], onDelete: Cascade, onUpdate: Restrict, map: "fk_pc_compra")
-  producto        producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_pc_producto")
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model proveedor {
+    id_proveedor      Int             @id @default(autoincrement())
+    nombre_proveedor  String          @db.VarChar(100)
+    ruc_cedula        String          @unique @db.VarChar(13)
+    correo            String?         @db.VarChar(120)
+    telefono          String?         @db.VarChar(20)
+    direccion         String?         @db.VarChar(150)
+    fecha_registro    DateTime        @default(now()) @db.Timestamp(6)
+    id_estado         Int             @default(1)
+    id_usuario_modifi Int?
+    compra            compra[]
+    producto          producto[]
+    estado_registro   estado_registro @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_proveedor_estado")
+    usuario           usuario?        @relation(fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_proveedor_usuario_modifi")
+  }
 
-  @@id([id_producto, id_compra])
-  @@index([id_compra], map: "idx_pc_compra")
-  @@index([id_producto], map: "idx_pc_producto")
-}
+  /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+  model usuario {
+    id_usuario                                 Int               @id @default(autoincrement())
+    nombre_completo                            String            @db.VarChar(100)
+    correo                                     String            @unique @db.VarChar(120)
+    telefono                                   String?           @db.VarChar(20)
+    direccion                                  String?           @db.VarChar(150)
+    cedula                                     String?           @unique @db.VarChar(10)
+    rol                                        String            @default("VENDEDOR") @db.VarChar(30)
+    password_hash                              String            @db.VarChar(255)
+    fecha_creacion                             DateTime          @default(now()) @db.Timestamp(6)
+    id_estado                                  Int               @default(1)
+    id_usuario_modifi                          Int?
+    cliente                                    cliente[]
+    compra                                     compra[]
+    compra_compra_id_usuario_modifiTousuario   compra[]          @relation("compra_id_usuario_modifiTousuario")
+    credito                                    credito[]
+    cuota                                      cuota[]
+    detalle_factura                            detalle_factura[]
+    factura                                    factura[]
+    factura_factura_id_usuario_modifiTousuario factura[]         @relation("factura_id_usuario_modifiTousuario")
+    kardex                                     kardex[]
+    producto                                   producto[]
+    producto_compra                            producto_compra[]
+    proveedor                                  proveedor[]
+    estado_registro                            estado_registro   @relation(fields: [id_estado], references: [id_estado], onDelete: NoAction, onUpdate: NoAction, map: "fk_usuario_estado")
+    usuario                                    usuario?          @relation("usuarioTousuario", fields: [id_usuario_modifi], references: [id_usuario], onUpdate: NoAction, map: "fk_usuario_usuario_modifi")
+    other_usuario                              usuario[]         @relation("usuarioTousuario")
+  }
 
-model producto_venta {
-  id_producto Int
-  id_venta    Int
-  producto    producto @relation(fields: [id_producto], references: [id_producto], onUpdate: Restrict, map: "fk_pv_producto")
-  ventas      ventas   @relation(fields: [id_venta], references: [id_venta], onDelete: Cascade, onUpdate: Restrict, map: "fk_pv_venta")
-
-  @@id([id_producto, id_venta])
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model proveedor {
-  id_proveedor      Int        @id @default(autoincrement())
-  nombre_proveedor  String     @db.VarChar(100)
-  telefono          String     @db.VarChar(20)
-  correo            String     @unique @db.VarChar(60)
-  direccion         String     @db.VarChar(100)
-  fecha             DateTime   @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime   @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  compra            compra[]
-  producto          producto[]
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model usuario {
-  id_usuario        Int       @id @default(autoincrement())
-  nombre            String    @db.VarChar(60)
-  correo            String    @unique @db.VarChar(60)
-  telefono          String    @db.VarChar(20)
-  direccion         String    @db.VarChar(100)
-  cedula            String    @unique @db.VarChar(15)
-  contrasena        String    @db.VarChar(100)
-  fecha             DateTime  @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime  @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  compra            compra[]
-  factura           factura[]
-}
-
-/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
-model ventas {
-  id_venta          Int              @id @default(autoincrement())
-  producto_vendido  String           @db.VarChar(100)
-  cantidad_vendida  Int
-  fecha             DateTime         @default(now()) @db.Timestamptz(6)
-  fecha_creacion    DateTime         @default(now()) @db.Timestamptz(6)
-  id_estado         Int
-  id_usuario_modifi Int?
-  kardex            kardex[]
-  producto_venta    producto_venta[]
-}
+  model estado_registro {
+    id_estado       Int               @id @default(autoincrement())
+    nombre_estado   String            @unique @db.VarChar(30)
+    descripcion     String?           @db.VarChar(100)
+    cliente         cliente[]
+    compra          compra[]
+    credito         credito[]
+    detalle_factura detalle_factura[]
+    factura         factura[]
+    kardex          kardex[]
+    producto        producto[]
+    producto_compra producto_compra[]
+    proveedor       proveedor[]
+    usuario         usuario[]
+  }
