@@ -71,13 +71,17 @@ export async function crearProducto(data: {
   stock_minimo?: number;
   id_usuario_modifi?: number | null;
 }) {
+  if (!data.id_proveedor) {
+    throw new Error("PROVEEDOR_REQUERIDO");
+  }
+
   try {
     const producto = await prisma.producto.create({
       data: {
         codigo_producto: data.codigo_producto,
         nombre_producto: data.nombre_producto,
         descripcion: data.descripcion ?? null,
-        id_proveedor: data.id_proveedor ?? null,
+        id_proveedor: data.id_proveedor,
         precio_compra: data.precio_compra,
         precio_venta: data.precio_venta,
         cantidad_stock: data.cantidad_stock ?? 0,
@@ -126,6 +130,10 @@ export async function actualizarProducto(
     id_usuario_modifi?: number | null;
   }
 ) {
+  if (data.id_proveedor !== undefined && !data.id_proveedor) {
+    throw new Error("PROVEEDOR_REQUERIDO");
+  }
+
   const updateData: any = {};
 
   if (data.codigo_producto !== undefined)

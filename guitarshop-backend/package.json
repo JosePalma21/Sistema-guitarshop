@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "seed:admin": "tsx scripts/createAdminUser.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.0",
@@ -32,6 +33,7 @@
     "prisma": "^6.18.0",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }
 }

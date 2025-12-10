@@ -84,11 +84,19 @@ export async function PUT(req: Request) {
   } catch (error: any) {
     console.error("Error PUT /productos/:id", error);
 
-    if (error instanceof Error && error.message === "PRODUCTO_DUPLICADO") {
-      return jsonCors(
-        { error: "El código de producto ya está registrado" },
-        { status: 400 }
-      );
+    if (error instanceof Error) {
+      if (error.message === "PRODUCTO_DUPLICADO") {
+        return jsonCors(
+          { error: "El código de producto ya está registrado" },
+          { status: 400 }
+        );
+      }
+      if (error.message === "PROVEEDOR_REQUERIDO") {
+        return jsonCors(
+          { error: "Debes seleccionar un proveedor" },
+          { status: 400 }
+        );
+      }
     }
 
     return jsonCors(

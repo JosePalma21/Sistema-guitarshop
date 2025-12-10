@@ -1,380 +1,682 @@
-import { useState } from "react";
-import {
-  useQuery,
-  useMutation,
-  useQueryClient,
-} from "@tanstack/react-query";
-import { api } from "../../lib/apiClient";
-import ProductForm, {
-  type ProductInput,
-  type Proveedor,
-} from "./components/ProductForm";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "../../components/ui/dialog";
+"use client"
 
-interface Producto {
-  id_producto: number;
-  codigo_producto: string;
-  nombre_producto: string;
-  descripcion: string | null;
-  precio_venta: number | string | null;
-  // algunos backends pueden devolver también "precio"
-  precio?: number | string | null;
-  cantidad_stock: number;
-  id_proveedor: number | null;
+import { useCallback, useMemo, useState } from "react"
+import { isAxiosError } from "axios"
+import { useForm } from "react-hook-form"
+import { z } from "zod"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  AlertCircle,
+  Boxes,
+  Edit2,
+  Image as ImageIcon,
+  Loader2,
+  Package,
+  Plus,
+  ShieldAlert,
+  Trash2,
+} from "lucide-react"
+
+import { api } from "../../lib/apiClient"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog"
+import { useAuthUser } from "../../lib/hooks/useAuthUser"
+
+type ProductoRecord = {
+  id_producto: number
+  codigo_producto: string
+  nombre_producto: string
+  descripcion: string | null
+  id_proveedor: number | null
+  precio_compra: number
+  precio_venta: number
+  cantidad_stock: number
+  stock_minimo: number
+  proveedor?: {
+    id_proveedor: number
+    nombre_proveedor: string
+  } | null
+}
+
+type ProveedorRecord = {
+  id_proveedor: number
+  nombre_proveedor: string
+}
+
+const isValidUrl = (value: string) => {
+  try {
+    new URL(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const productoSchema = z.object({
+  codigo_producto: z.string().trim().min(1, "El código es obligatorio").max(30, "Máximo 30 caracteres"),
+  nombre_producto: z.string().trim().min(1, "El nombre es obligatorio").max(100, "Máximo 100 caracteres"),
+  descripcion: z
+    .string()
+    .trim()
+    .max(255, "Máximo 255 caracteres")
+    .or(z.literal("")),
+  imagen_url: z
+    .string()
+    .trim()
+    .max(255, "Máximo 255 caracteres")
+    .refine(
+      (value) => value.length === 0 || isValidUrl(value),
+      "Ingresa un enlace válido para la imagen"
+    ),
+  precio_compra: z.number().nonnegative("No puede ser negativo"),
+  precio_venta: z.number().nonnegative("No puede ser negativo"),
+  cantidad_stock: z.number().int("Debe ser entero").min(0, "No puede ser negativo"),
+  stock_minimo: z.number().int("Debe ser entero").min(0, "No puede ser negativo"),
+  id_proveedor: z
+    .string()
+    .min(1, "Selecciona un proveedor")
+    .refine((value) => {
+      const parsed = Number(value)
+      return Number.isInteger(parsed) && parsed > 0
+    }, "Selecciona un proveedor válido"),
+})
+
+type ProductoFormValues = z.infer<typeof productoSchema>
+
+type ProductoPayload = {
+  codigo_producto: string
+  nombre_producto: string
+  descripcion: string | null
+  id_proveedor: number
+  precio_compra: number
+  precio_venta: number
+  cantidad_stock: number
+  stock_minimo: number
+}
+
+const currency = new Intl.NumberFormat("es-EC", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 2,
+})
+
+const defaultValues: Partial<ProductoFormValues> = {
+  codigo_producto: "",
+  nombre_producto: "",
+  descripcion: "",
+  imagen_url: "",
+  precio_compra: 0,
+  precio_venta: 0,
+  cantidad_stock: 0,
+  stock_minimo: 0,
+  id_proveedor: "",
+}
+
+type ApiErrorResponse = {
+  error?: string
+  message?: string
+}
+
+const getApiErrorMessage = (error: unknown, fallback: string) => {
+  if (isAxiosError<ApiErrorResponse>(error)) {
+    return error.response?.data?.error ?? error.response?.data?.message ?? fallback
+  }
+  if (error instanceof Error) {
+    return error.message
+  }
+  return fallback
 }
 
 export default function ProductsPage() {
-  const queryClient = useQueryClient();
+  const { isAdmin } = useAuthUser()
+  const queryClient = useQueryClient()
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [editingProduct, setEditingProduct] = useState<ProductoRecord | null>(null)
+  const [formError, setFormError] = useState<string | null>(null)
 
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState<Producto | null>(
-    null
-  );
-  const [formError, setFormError] = useState<string | null>(null);
+  const form = useForm<ProductoFormValues>({
+    resolver: zodResolver(productoSchema),
+    defaultValues,
+  })
 
-  // LISTAR PRODUCTOS
-  const {
-    data: productos = [],
-    isLoading,
-    isError,
-  } = useQuery<Producto[]>({
-    queryKey: ["productos"],
-    queryFn: async () => {
-      const res = await api.get<any[]>("/producto");
-      // Normalizamos para que SIEMPRE tengamos precio_venta
-      return res.data.map((p) => ({
-        ...p,
-        precio_venta: p.precio_venta ?? p.precio ?? 0,
-      })) as Producto[];
-    },
-  });
-
-  // LISTAR PROVEEDORES
-  const {
-    data: proveedores = [],
-    isLoading: loadingProveedores,
-  } = useQuery<Proveedor[]>({
-    queryKey: ["proveedores"],
-    queryFn: async () => {
-      const res = await api.get<Proveedor[]>("/proveedor");
-      return res.data;
-    },
-  });
-
-  // CREAR
-  const createMutation = useMutation({
-  // 👇 usamos any para no pelearnos con TS aquí
-  mutationFn: async (formData: any) => {
-    setFormError(null);
-
-    const data = formData as any;
-
-    const payload = {
-      codigo_producto: data.codigo_producto,
-      nombre_producto: data.nombre_producto,
-      descripcion: data.descripcion,
-      cantidad_stock: data.cantidad_stock,
-      id_proveedor: data.id_proveedor,
-      // si el form tiene precio_venta lo usamos, si no, precio
-      precio: data.precio_venta ?? data.precio,
-      precio_venta: data.precio_venta ?? data.precio,
-    };
-
-    await api.post("/producto", payload);
-  },
-  onError: (err: any) => {
-    console.error("Error al crear producto", err?.response?.data || err);
-    const msg =
-      err?.response?.data?.message ||
-      err?.response?.data?.error ||
-      "Error al crear el producto.";
-    setFormError(msg);
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["productos"] });
-    setIsFormOpen(false);
-  },
-});
-
-
-  // EDITAR
-  const updateMutation = useMutation({
-  mutationFn: async (payload: { id: number; data: any }) => {
-    setFormError(null);
-
-    const d = payload.data as any;
-
-    const body = {
-      codigo_producto: d.codigo_producto,
-      nombre_producto: d.nombre_producto,
-      descripcion: d.descripcion,
-      cantidad_stock: d.cantidad_stock,
-      id_proveedor: d.id_proveedor,
-      precio: d.precio_venta ?? d.precio,
-      precio_venta: d.precio_venta ?? d.precio,
-    };
-
-    await api.put(`/producto/${payload.id}`, body);
-  },
-  onError: (err: any) => {
-    console.error("Error al actualizar producto", err?.response?.data || err);
-    const msg =
-      err?.response?.data?.message ||
-      err?.response?.data?.error ||
-      "Error al actualizar el producto.";
-    setFormError(msg);
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries({ queryKey: ["productos"] });
-    setIsFormOpen(false);
-    setSelectedProduct(null);
-  },
-});
-
-  // ELIMINAR
-  const deleteMutation = useMutation({
-    mutationFn: async (id: number) => {
-      await api.delete(`/producto/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["productos"] });
-      setIsDeleteOpen(false);
-      setSelectedProduct(null);
-    },
-  });
-
-  const handleNew = () => {
-    setSelectedProduct(null);
-    setFormError(null);
-    setIsFormOpen(true);
-  };
-
-  const handleEdit = (p: Producto) => {
-    setSelectedProduct(p);
-    setFormError(null);
-    setIsFormOpen(true);
-  };
-
-  const handleDeleteClick = (p: Producto) => {
-    setSelectedProduct(p);
-    setIsDeleteOpen(true);
-  };
-
-  const handleSubmitForm = (values: ProductInput) => {
-    if (selectedProduct) {
-      updateMutation.mutate({
-        id: selectedProduct.id_producto,
-        data: values,
-      });
-    } else {
-      createMutation.mutate(values);
+  const watchedImageUrl = form.watch("imagen_url")
+  const imagePreview = useMemo(() => {
+    const trimmed = watchedImageUrl?.trim()
+    if (!trimmed) return null
+    try {
+      return new URL(trimmed).toString()
+    } catch {
+      return null
     }
-  };
+  }, [watchedImageUrl])
 
-  const handleConfirmDelete = () => {
-    if (!selectedProduct) return;
-    deleteMutation.mutate(selectedProduct.id_producto);
-  };
+  const productosQuery = useQuery<ProductoRecord[]>({
+    queryKey: ["productos"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { data } = await api.get<ProductoRecord[]>("/producto")
+      if (!Array.isArray(data)) return []
+      return data.map((item) => ({
+        ...item,
+        precio_compra: Number(item.precio_compra ?? 0),
+        precio_venta: Number(item.precio_venta ?? 0),
+        cantidad_stock: Number(item.cantidad_stock ?? 0),
+        stock_minimo: Number(item.stock_minimo ?? 0),
+      }))
+    },
+  })
 
-  if (isLoading)
-    return <div className="text-sm p-2">Cargando productos...</div>;
+  const proveedoresQuery = useQuery<ProveedorRecord[]>({
+    queryKey: ["proveedores"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { data } = await api.get<ProveedorRecord[]>("/proveedor")
+      return Array.isArray(data) ? data : []
+    },
+  })
 
-  if (isError)
+  const imagenesQuery = useQuery<Record<number, string>>({
+    queryKey: ["product-images"],
+    enabled: isAdmin,
+    queryFn: async () => {
+      const { data } = await api.get<Record<string, string>>("/producto/imagen")
+      const normalized: Record<number, string> = {}
+      if (data && typeof data === "object") {
+        Object.entries(data).forEach(([key, value]) => {
+          const id = Number(key)
+          if (!Number.isNaN(id) && typeof value === "string" && value.trim().length > 0) {
+            normalized[id] = value
+          }
+        })
+      }
+      return normalized
+    },
+  })
+
+  const saveProductImage = useCallback(
+    async (productId: number, url: string | null) => {
+      await api.post("/producto/imagen", {
+        id_producto: productId,
+        imagen_url: url,
+      })
+      queryClient.invalidateQueries({ queryKey: ["product-images"] })
+    },
+    [queryClient]
+  )
+
+  const closeDialog = () => {
+    setDialogOpen(false)
+    setEditingProduct(null)
+    setFormError(null)
+    form.reset(defaultValues)
+  }
+
+  const openCreate = () => {
+    setEditingProduct(null)
+    setFormError(null)
+    form.reset(defaultValues)
+    setDialogOpen(true)
+  }
+
+  const openEdit = (producto: ProductoRecord) => {
+    setEditingProduct(producto)
+    setFormError(null)
+    form.reset({
+      codigo_producto: producto.codigo_producto,
+      nombre_producto: producto.nombre_producto,
+      descripcion: producto.descripcion ?? "",
+      imagen_url: imageMap[producto.id_producto] ?? "",
+      precio_compra: producto.precio_compra,
+      precio_venta: producto.precio_venta,
+      cantidad_stock: producto.cantidad_stock,
+      stock_minimo: producto.stock_minimo,
+      id_proveedor: producto.id_proveedor ? String(producto.id_proveedor) : "",
+    })
+    setDialogOpen(true)
+  }
+
+  const createMutation = useMutation({
+    mutationFn: ({ payload }: { payload: ProductoPayload; imageUrl: string | null }) =>
+      api.post<ProductoRecord>("/producto", payload).then((res) => res.data),
+    onSuccess: async (data, variables) => {
+      try {
+        await saveProductImage(data.id_producto, variables.imageUrl)
+      } catch (error) {
+        setFormError(getApiErrorMessage(error, "No se pudo guardar la imagen"))
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ["productos"] })
+      closeDialog()
+    },
+    onError: (error: unknown) => {
+      setFormError(getApiErrorMessage(error, "No se pudo crear el producto"))
+    },
+  })
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, payload }: { id: number; payload: ProductoPayload; imageUrl: string | null }) =>
+      api.put(`/producto/${id}`, payload).then((res) => res.data),
+    onSuccess: async (data, variables) => {
+      try {
+        await saveProductImage(data.id_producto, variables.imageUrl)
+      } catch (error) {
+        setFormError(getApiErrorMessage(error, "No se pudo guardar la imagen"))
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ["productos"] })
+      closeDialog()
+    },
+    onError: (error: unknown) => {
+      setFormError(getApiErrorMessage(error, "No se pudo actualizar el producto"))
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => api.delete(`/producto/${id}`),
+    onSuccess: async (_, id) => {
+      try {
+        await saveProductImage(id, null)
+      } catch (error) {
+        console.error("No se pudo limpiar la imagen del producto", error)
+      }
+      queryClient.invalidateQueries({ queryKey: ["productos"] })
+    },
+  })
+
+  const onSubmit = form.handleSubmit((values) => {
+    const imageUrl = values.imagen_url?.trim() ? values.imagen_url.trim() : null
+    const proveedorId = Number(values.id_proveedor)
+
+    const payload: ProductoPayload = {
+      codigo_producto: values.codigo_producto.trim(),
+      nombre_producto: values.nombre_producto.trim(),
+      descripcion: values.descripcion?.trim() ? values.descripcion.trim() : null,
+      id_proveedor: proveedorId,
+      precio_compra: values.precio_compra,
+      precio_venta: values.precio_venta,
+      cantidad_stock: values.cantidad_stock,
+      stock_minimo: values.stock_minimo,
+    }
+
+    if (editingProduct) {
+      updateMutation.mutate({ id: editingProduct.id_producto, payload, imageUrl })
+    } else {
+      createMutation.mutate({ payload, imageUrl })
+    }
+  })
+
+  const handleDelete = (producto: ProductoRecord) => {
+    if (deleteMutation.isPending) return
+    const confirmed = window.confirm(
+      `¿Seguro que deseas eliminar ${producto.nombre_producto}? Esta acción es permanente.`
+    )
+    if (confirmed) {
+      deleteMutation.mutate(producto.id_producto)
+    }
+  }
+
+  const productos = useMemo(() => productosQuery.data ?? [], [productosQuery.data])
+  const proveedores = proveedoresQuery.data ?? []
+  const imageMap = imagenesQuery.data ?? {}
+  const lowStock = useMemo(() => productos.filter((p) => p.cantidad_stock <= p.stock_minimo), [productos])
+  const noProveedoresDisponibles = !proveedoresQuery.isLoading && proveedores.length === 0
+  const isMutating = createMutation.isPending || updateMutation.isPending
+
+  if (!isAdmin) {
     return (
-      <div className="text-sm p-2 text-red-600">
-        No se pudo cargar la lista de productos.
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
+        <div className="flex items-center gap-3 text-amber-800">
+          <ShieldAlert className="h-5 w-5" />
+          <div>
+            <p className="font-semibold">Acceso restringido</p>
+            <p className="text-sm">Solo usuarios con rol ADMIN pueden administrar productos.</p>
+          </div>
+        </div>
       </div>
-    );
+    )
+  }
 
   return (
-    <div className="text-slate-900">
-      <div className="mx-auto max-w-5xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Productos</h1>
-            <p className="text-sm text-slate-500">
-              Gestiona el catálogo de productos de GuitarShop.
-            </p>
-          </div>
+    <div className="space-y-8">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Inventario</p>
+          <h1 className="text-3xl font-semibold text-slate-900">Productos</h1>
+          <p className="mt-1 text-sm text-slate-500">Visualiza, crea y actualiza todo tu catálogo.</p>
+        </div>
+        <div className="flex flex-col items-end gap-2">
           <button
-            onClick={handleNew}
-            className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700"
+            onClick={openCreate}
+            disabled={noProveedoresDisponibles}
+            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
           >
+            <Plus className="h-4 w-4" />
             Nuevo producto
           </button>
+          {noProveedoresDisponibles && (
+            <p className="text-xs text-amber-700">
+              Crea un proveedor para habilitar este módulo.
+            </p>
+          )}
         </div>
+      </header>
 
-        <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <table className="min-w-full text-sm">
+      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <article className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase text-slate-500">Total registrados</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900">{productos.length}</p>
+          <p className="text-sm text-slate-500">Productos activos según Prisma</p>
+        </article>
+        <article className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase text-slate-500">Stock crítico</p>
+          <p className="mt-2 text-3xl font-semibold text-amber-600">{lowStock.length}</p>
+          <p className="text-sm text-slate-500">Con stock menor o igual al mínimo</p>
+        </article>
+        <article className="rounded-2xl border border-slate-200 bg-white p-5">
+          <p className="text-xs uppercase text-slate-500">Proveedores activos</p>
+          <p className="mt-2 text-3xl font-semibold text-slate-900">{proveedores.length}</p>
+          <p className="text-sm text-slate-500">Fuente para nuevas compras</p>
+        </article>
+      </section>
+
+      {(productosQuery.isError || proveedoresQuery.isError) && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+          <div className="flex items-center gap-2 font-medium">
+            <AlertCircle className="h-4 w-4" />
+            Error al cargar datos. Intenta nuevamente.
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-2xl border border-slate-200 bg-white">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  ID
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Código
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Nombre
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Precio
-                </th>
-                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">
-                  Stock
-                </th>
-                <th className="px-3 py-2 text-right text-xs font-semibold text-slate-500">
-                  Acciones
-                </th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Código</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Producto</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Proveedor</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Precios</th>
+                <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Stock</th>
+                <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Acciones</th>
               </tr>
             </thead>
-            <tbody>
-              {productos && productos.length > 0 ? (
-                productos.map((p) => (
-                  <tr
-                    key={p.id_producto}
-                    className="border-t border-slate-100 hover:bg-slate-50"
-                  >
-                    <td className="px-3 py-2">{p.id_producto}</td>
-                    <td className="px-3 py-2">{p.codigo_producto}</td>
-                    <td className="px-3 py-2">{p.nombre_producto}</td>
-                    <td className="px-3 py-2">
-                      {p.precio_venta !== null && p.precio_venta !== undefined
-                        ? `$${Number(p.precio_venta).toFixed(2)}`
-                        : "-"}
+            <tbody className="divide-y divide-slate-200 bg-white">
+              {productos.map((producto) => {
+                const critical = producto.cantidad_stock <= producto.stock_minimo
+                const previewImage = imageMap[producto.id_producto] ?? null
+                return (
+                  <tr key={producto.id_producto} className="hover:bg-slate-50">
+                    <td className="px-6 py-4 text-sm font-medium text-slate-900">{producto.codigo_producto}</td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-start gap-3">
+                        <div className="h-12 w-12 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                          {previewImage ? (
+                            <img
+                              src={previewImage}
+                              alt={producto.nombre_producto}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-slate-400">
+                              <ImageIcon className="h-5 w-5" />
+                            </div>
+                          )}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">{producto.nombre_producto}</p>
+                          {producto.descripcion && (
+                            <p className="text-xs text-slate-500">{producto.descripcion}</p>
+                          )}
+                        </div>
+                      </div>
                     </td>
-                    <td className="px-3 py-2">{p.cantidad_stock}</td>
-                    <td className="px-3 py-2 text-right space-x-2">
-                      <button
-                        onClick={() => handleEdit(p)}
-                        className="text-xs text-blue-600 hover:underline"
+                    <td className="px-6 py-4 text-sm text-slate-700">
+                      {producto.proveedor?.nombre_proveedor ?? "Sin proveedor"}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-700">
+                      <div>
+                        <span className="font-medium text-slate-900">Venta:</span> {currency.format(producto.precio_venta)}
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Compra:</span> {currency.format(producto.precio_compra)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <span
+                        className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
+                          critical ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"
+                        }`}
                       >
-                        Editar
-                      </button>
-                      <button
-                        onClick={() => handleDeleteClick(p)}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Eliminar
-                      </button>
+                        <Boxes className="h-3.5 w-3.5" />
+                        {producto.cantidad_stock} uds
+                      </span>
+                      <p className="text-xs text-slate-500">Mínimo: {producto.stock_minimo}</p>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button
+                          onClick={() => openEdit(producto)}
+                          className="rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                        >
+                          <Edit2 className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(producto)}
+                          className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-3 py-4 text-center text-sm text-slate-500"
-                  >
-                    No hay productos registrados.
-                  </td>
-                </tr>
-              )}
+                )
+              })}
             </tbody>
           </table>
         </div>
+
+        {productosQuery.isLoading && (
+          <div className="flex items-center justify-center gap-2 p-6 text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Cargando productos...
+          </div>
+        )}
+
+        {!productosQuery.isLoading && productos.length === 0 && (
+          <div className="p-8 text-center text-slate-500">
+            <Package size={36} className="mx-auto mb-2 opacity-50" />
+            <p>No hay productos registrados.</p>
+          </div>
+        )}
       </div>
 
-      {/* MODAL CREAR / EDITAR */}
       <Dialog
-        open={isFormOpen}
+        open={dialogOpen}
         onOpenChange={(open) => {
-          setIsFormOpen(open);
           if (!open) {
-            setSelectedProduct(null);
-            setFormError(null);
+            closeDialog()
+          } else {
+            setDialogOpen(true)
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle className="text-base">
-              {selectedProduct ? "Editar producto" : "Nuevo producto"}
-            </DialogTitle>
+            <DialogTitle>{editingProduct ? "Editar producto" : "Nuevo producto"}</DialogTitle>
+            <DialogDescription>Todos los campos se validan con el esquema del backend.</DialogDescription>
           </DialogHeader>
-
-          <ProductForm
-            defaultValues={
-              selectedProduct
-                ? ({
-                    nombre_producto: selectedProduct.nombre_producto,
-                    precio: Number(selectedProduct.precio_venta ?? 0),
-                    cantidad_stock: selectedProduct.cantidad_stock,
-                    id_proveedor: selectedProduct.id_proveedor ?? 0,
-                  } as ProductInput)
-                : undefined
-            }
-            proveedores={proveedores}
-            loadingProveedores={loadingProveedores}
-            onSubmit={handleSubmitForm}
-            onCancel={() => {
-              setIsFormOpen(false);
-              setSelectedProduct(null);
-              setFormError(null);
-            }}
-          />
 
           {formError && (
-            <p className="mt-2 text-xs text-red-600">{formError}</p>
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+              {formError}
+            </div>
           )}
-        </DialogContent>
-      </Dialog>
 
-      {/* MODAL ELIMINAR */}
-      <Dialog
-        open={isDeleteOpen}
-        onOpenChange={(open) => {
-          setIsDeleteOpen(open);
-          if (!open) setSelectedProduct(null);
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-base">
-              Confirmar eliminación
-            </DialogTitle>
-          </DialogHeader>
+          <form onSubmit={onSubmit} className="mt-4 space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium uppercase text-slate-500">Código</label>
+                <input
+                  {...form.register("codigo_producto")}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {form.formState.errors.codigo_producto && (
+                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.codigo_producto.message}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase text-slate-500">Nombre</label>
+                <input
+                  {...form.register("nombre_producto")}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {form.formState.errors.nombre_producto && (
+                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.nombre_producto.message}</p>
+                )}
+              </div>
+            </div>
 
-          <p className="text-sm text-slate-600">
-            ¿Seguro que deseas eliminar el producto{" "}
-            <span className="font-semibold">
-              {selectedProduct?.nombre_producto}
-            </span>
-            ?
-          </p>
+            <div>
+              <label className="text-xs font-medium uppercase text-slate-500">Descripción</label>
+              <textarea
+                rows={3}
+                {...form.register("descripcion")}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Materiales, marca, observaciones..."
+              />
+              {form.formState.errors.descripcion && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.descripcion.message}</p>
+              )}
+            </div>
 
-          <div className="mt-4 flex justify-end gap-2">
-            <button
-              onClick={() => {
-                setIsDeleteOpen(false);
-                setSelectedProduct(null);
-              }}
-              className="rounded-lg border border-slate-300 px-4 py-2 text-xs text-slate-700 hover:bg-slate-50"
-            >
-              Cancelar
-            </button>
-            <button
-              onClick={handleConfirmDelete}
-              disabled={deleteMutation.isPending}
-              className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white hover:bg-red-700 disabled:opacity-60"
-            >
-              {deleteMutation.isPending ? "Eliminando..." : "Eliminar"}
-            </button>
-          </div>
+            <div>
+              <label className="text-xs font-medium uppercase text-slate-500">Imagen compartida (URL pública)</label>
+              <input
+                {...form.register("imagen_url")}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="https://mis-imagenes.com/producto.jpg"
+              />
+              {form.formState.errors.imagen_url && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.imagen_url.message}</p>
+              )}
+              {imagePreview && (
+                <div className="mt-3 flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <img
+                    src={imagePreview}
+                    alt="Vista previa del producto"
+                    className="h-14 w-14 rounded-lg object-cover"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Se mostrará en todos los puestos de venta al guardar el formulario.
+                  </p>
+                </div>
+              )}
+            </div>
 
-          {deleteMutation.isError && (
-            <p className="mt-2 text-xs text-red-600">
-              Ocurrió un error al eliminar el producto.
-            </p>
-          )}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium uppercase text-slate-500">Precio de compra</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...form.register("precio_compra", { valueAsNumber: true })}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {form.formState.errors.precio_compra && (
+                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.precio_compra.message}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase text-slate-500">Precio de venta</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  {...form.register("precio_venta", { valueAsNumber: true })}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {form.formState.errors.precio_venta && (
+                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.precio_venta.message}</p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <label className="text-xs font-medium uppercase text-slate-500">Stock actual</label>
+                <input
+                  type="number"
+                  {...form.register("cantidad_stock", { valueAsNumber: true })}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {form.formState.errors.cantidad_stock && (
+                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.cantidad_stock.message}</p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-medium uppercase text-slate-500">Stock mínimo</label>
+                <input
+                  type="number"
+                  {...form.register("stock_minimo", { valueAsNumber: true })}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                />
+                {form.formState.errors.stock_minimo && (
+                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.stock_minimo.message}</p>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs font-medium uppercase text-slate-500">
+                Proveedor <span className="text-red-500">*</span>
+              </label>
+              <select
+                {...form.register("id_proveedor")}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                disabled={proveedoresQuery.isLoading || noProveedoresDisponibles}
+                defaultValue=""
+              >
+                <option value="">Selecciona un proveedor</option>
+                {proveedores.map((prov) => (
+                  <option key={prov.id_proveedor} value={prov.id_proveedor}>
+                    {prov.nombre_proveedor}
+                  </option>
+                ))}
+              </select>
+              {proveedoresQuery.isLoading && (
+                <p className="mt-1 text-xs text-slate-500">Cargando proveedores...</p>
+              )}
+              {noProveedoresDisponibles && (
+                <p className="mt-1 text-xs text-amber-600">
+                  No hay proveedores registrados. Registra uno en el módulo correspondiente.
+                </p>
+              )}
+              {form.formState.errors.id_proveedor && (
+                <p className="mt-1 text-xs text-red-600">{form.formState.errors.id_proveedor.message}</p>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeDialog}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isMutating || noProveedoresDisponibles}
+              >
+                {isMutating && <Loader2 className="h-4 w-4 animate-spin" />}
+                Guardar
+              </button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
-  );
+  )
 }

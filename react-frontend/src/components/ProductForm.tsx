@@ -61,7 +61,7 @@ export default function ProductForm({
       descripcion: "",
       precio_venta: 0,
       cantidad_stock: 0,
-      id_proveedor: 0 as any,
+      id_proveedor: 0,
     },
   });
 
