@@ -1,6 +1,6 @@
 // guitarshop-backend/app/api/proveedores/[id]/route.ts
 import { jsonCors, optionsCors } from "../../../../lib/cors";
-import { verifyToken } from "../../../../lib/auth";
+import { hasAdminRole, verifyToken } from "../../../../lib/auth";
 import {
   obtenerProveedorPorId,
   actualizarProveedor,
@@ -26,6 +26,13 @@ export async function GET(req: Request) {
     return jsonCors(
       { error: auth.message ?? "Token inválido" },
       { status: 401 }
+    );
+  }
+
+  if (!hasAdminRole(auth)) {
+    return jsonCors(
+      { error: "Solo administradores pueden acceder a proveedores" },
+      { status: 403 }
     );
   }
 
@@ -57,6 +64,13 @@ export async function PUT(req: Request) {
     return jsonCors(
       { error: auth.message ?? "Token inválido" },
       { status: 401 }
+    );
+  }
+
+  if (!hasAdminRole(auth)) {
+    return jsonCors(
+      { error: "Solo administradores pueden actualizar proveedores" },
+      { status: 403 }
     );
   }
 
@@ -102,6 +116,13 @@ export async function DELETE(req: Request) {
     return jsonCors(
       { error: auth.message ?? "Token inválido" },
       { status: 401 }
+    );
+  }
+
+  if (!hasAdminRole(auth)) {
+    return jsonCors(
+      { error: "Solo administradores pueden eliminar proveedores" },
+      { status: 403 }
     );
   }
 

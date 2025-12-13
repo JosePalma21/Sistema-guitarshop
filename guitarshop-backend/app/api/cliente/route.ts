@@ -1,6 +1,6 @@
 // guitarshop-backend/app/api/clientes/route.ts
 import { jsonCors, optionsCors } from "../../../lib/cors";
-import { verifyToken } from "../../../lib/auth";
+import { hasAdminRole, verifyToken } from "../../../lib/auth";
 import {
   listarClientes,
   crearCliente,
@@ -17,6 +17,13 @@ export async function GET(req: Request) {
     return jsonCors(
       { error: auth.message ?? "Token inválido" },
       { status: 401 }
+    );
+  }
+
+  if (!hasAdminRole(auth)) {
+    return jsonCors(
+      { error: "Solo administradores pueden acceder a clientes" },
+      { status: 403 }
     );
   }
 
@@ -39,6 +46,13 @@ export async function POST(req: Request) {
     return jsonCors(
       { error: auth.message ?? "Token inválido" },
       { status: 401 }
+    );
+  }
+
+  if (!hasAdminRole(auth)) {
+    return jsonCors(
+      { error: "Solo administradores pueden crear clientes" },
+      { status: 403 }
     );
   }
 

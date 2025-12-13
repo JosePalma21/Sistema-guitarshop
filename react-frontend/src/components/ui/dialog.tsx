@@ -5,6 +5,8 @@ import { X } from "lucide-react"
 
 import { cn } from "../../lib/utils"
 
+// Adaptación ligera del componente Dialog de shadcn para el diseño del proyecto.
+
 const Dialog = DialogPrimitive.Root
   
 const DialogTrigger = DialogPrimitive.Trigger

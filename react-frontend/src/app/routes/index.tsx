@@ -23,7 +23,7 @@ export const router = createBrowserRouter(
       {/* Ruta pública */}
       <Route path="/login" element={<Login />} />
 
-      {/* Rutas protegidas */}
+      {/* Rutas protegidas: ProtectedRoute valida token y AppLayout aporta el shell */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />

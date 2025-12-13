@@ -64,12 +64,14 @@ type ProductoOption = {
   codigo_producto: string
 }
 
+// Cada fila del detalle respeta las mismas validaciones que el backend.
 const detalleSchema = z.object({
   id_producto: z.number().int("Producto inválido").positive("Selecciona un producto válido"),
   cantidad: z.number().int("Debe ser entero").min(1, "Cantidad mínima 1"),
   costo_unitario: z.number().min(0.01, "Costo mínimo 0.01"),
 })
 
+// Cabecera completa: proveedor + observación + listado de productos.
 const compraSchema = z.object({
   id_proveedor: z.number().int("Proveedor inválido").positive("Selecciona un proveedor"),
   observacion: z
@@ -98,6 +100,7 @@ type ApiErrorResponse = {
   message?: string
 }
 
+// Formulario nace con una fila para que el usuario tenga contexto inmediato.
 const defaultValues: CompraFormValues = {
   id_proveedor: 0,
   observacion: "",
@@ -110,17 +113,22 @@ const defaultValues: CompraFormValues = {
   ],
 }
 
+// Mantenemos todas las cifras de compra en USD con 2 decimales.
 const currency = new Intl.NumberFormat("es-EC", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
 })
 
+// Las fechas de compra muestran día y hora para auditoría rápida.
 const dateFormatter = new Intl.DateTimeFormat("es-EC", {
   dateStyle: "medium",
   timeStyle: "short",
 })
 
+const IVA_RATE = 0.15 // 15 % IVA
+
+// Error helper compartido entre los mutate y las queries.
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (isAxiosError<ApiErrorResponse>(error)) {
     return error.response?.data?.error ?? error.response?.data?.message ?? fallback
@@ -138,13 +146,16 @@ export default function ComprasPage() {
   const [detailId, setDetailId] = useState<number | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // React Hook Form + Zod se encargan de validar cada campo del modal.
   const form = useForm<CompraFormValues>({
     resolver: zodResolver(compraSchema),
     defaultValues,
   })
 
+  // Permite añadir/quitar filas dinámicamente y mantener los índices sincronizados.
   const detalleFieldArray = useFieldArray({ control: form.control, name: "detalle" })
 
+  // Traemos la lista completa de compras sólo para administradores.
   const comprasQuery = useQuery<CompraListRecord[]>({
     queryKey: ["compras"],
     enabled: isAdmin,
@@ -163,6 +174,7 @@ export default function ComprasPage() {
     },
   })
 
+  // Catálogo resumido para poblar el selector de productos.
   const productosQuery = useQuery<ProductoOption[]>({
     queryKey: ["productos"],
     enabled: isAdmin,
@@ -177,6 +189,7 @@ export default function ComprasPage() {
     },
   })
 
+  // Modal secundario que muestra la compra con sus productos.
   const compraDetalleQuery = useQuery<CompraDetailRecord>({
     queryKey: ["compra", detailId],
     enabled: detailId !== null,
@@ -186,18 +199,21 @@ export default function ComprasPage() {
     },
   })
 
+  // Limpia todo cuando cerramos el modal principal.
   const closeDialog = () => {
     setDialogOpen(false)
     setFormError(null)
     form.reset(defaultValues)
   }
 
+  // Abre el modal en blanco para la creación.
   const openCreate = () => {
     setFormError(null)
     form.reset(defaultValues)
     setDialogOpen(true)
   }
 
+  // Normalizamos strings y armamos la carga útil que espera el backend.
   const buildPayload = (values: CompraFormValues): CompraPayload => ({
     id_proveedor: values.id_proveedor,
     observacion: values.observacion?.trim() ? values.observacion.trim() : null,
@@ -208,6 +224,7 @@ export default function ComprasPage() {
     })),
   })
 
+  // POST /compra y posterior invalidación para refrescar la tabla.
   const createMutation = useMutation({
     mutationFn: (payload: CompraPayload) => api.post("/compra", payload).then((res) => res.data),
     onSuccess: () => {
@@ -219,6 +236,7 @@ export default function ComprasPage() {
     },
   })
 
+  // Handler compartido tanto para crear desde cero como para duplicar futuras compras.
   const onSubmit = form.handleSubmit((values) => {
     createMutation.mutate(buildPayload(values))
   })
@@ -227,6 +245,7 @@ export default function ComprasPage() {
   const proveedores = proveedoresQuery.data ?? []
   const productos = productosQuery.data ?? []
 
+  // KPIs que alimentan las tarjetas superiores.
   const totalInvertido = useMemo(
     () => compras.reduce((acc, compra) => acc + (compra.total ?? 0), 0),
     [compras]
@@ -243,7 +262,7 @@ export default function ComprasPage() {
         subtotal += item.cantidad * item.costo_unitario
       }
     })
-    const impuesto = Number((subtotal * 0.12).toFixed(2))
+    const impuesto = Number((subtotal * IVA_RATE).toFixed(2))
     const total = Number((subtotal + impuesto).toFixed(2))
     return { subtotal, impuesto, total }
   }, [detalleValues])
@@ -288,7 +307,7 @@ export default function ComprasPage() {
         <article className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-xs uppercase text-slate-500">Capital invertido</p>
           <p className="mt-2 text-3xl font-semibold text-blue-600">{currency.format(totalInvertido)}</p>
-          <p className="text-sm text-slate-500">Incluye IVA al 12 %</p>
+          <p className="text-sm text-slate-500">Incluye IVA al 15 %</p>
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white p-5">
           <p className="text-xs uppercase text-slate-500">Proveedores activos</p>
@@ -542,7 +561,7 @@ export default function ComprasPage() {
                 <span>{currency.format(totals.subtotal)}</span>
               </div>
               <div className="flex items-center justify-between">
-                <span>IVA (12 %)</span>
+                <span>IVA (15 %)</span>
                 <span>{currency.format(totals.impuesto)}</span>
               </div>
               <div className="mt-2 flex items-center justify-between text-base font-semibold text-slate-900">
@@ -646,7 +665,7 @@ export default function ComprasPage() {
                   <span>{currency.format(compraDetalleQuery.data.subtotal)}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span>IVA (12 %)</span>
+                  <span>IVA (15 %)</span>
                   <span>{currency.format(compraDetalleQuery.data.impuesto)}</span>
                 </div>
                 <div className="mt-2 flex items-center justify-between text-base font-semibold text-slate-900">

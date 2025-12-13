@@ -496,8 +496,8 @@ BEGIN
 
     UPDATE compra
     SET subtotal = v_subtotal,
-        impuesto = ROUND(v_subtotal * 0.12, 2),
-        total    = ROUND(v_subtotal * 1.12, 2)
+      impuesto = ROUND(v_subtotal * 0.15, 2),
+      total    = ROUND(v_subtotal * 1.15, 2)
     WHERE id_compra = p_id_compra;
 END;
 $$ LANGUAGE plpgsql;
@@ -519,8 +519,8 @@ BEGIN
 
     UPDATE factura
     SET subtotal = v_subtotal,
-        impuesto = ROUND(v_subtotal * 0.12, 2),
-        total    = ROUND(v_subtotal * 1.12, 2)
+      impuesto = ROUND(v_subtotal * 0.15, 2),
+      total    = ROUND(v_subtotal * 1.15, 2)
     WHERE id_factura = p_id_factura;
 END;
 $$ LANGUAGE plpgsql;

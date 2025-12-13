@@ -1,22 +1,37 @@
-# Dependencias
+# ========================
+# DEPENDENCIAS
+# ========================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Build y temporales
+# ========================
+# BUILD / FRAMEWORKS
+# ========================
 dist/
 .next/
 out/
+.vite/
+
+# ========================
+# VARIABLES DE ENTORNO
+# ========================
 .env
-*.env
+.env.*
+!.env.example
 
-# Prisma
-/generated
-/guitarshop-backend/generated
-/guitarshop-backend/prisma/migrations/
-prisma/migrations/
+# ========================
+# PRISMA
+# ========================
+# Solo el cliente generado (si usas output custom)
+generated/
 
-# IDE
+# ⚠️ NO IGNORAR migraciones
+# prisma/migrations/   <-- ESTO NO VA IGNORADO
+
+# ========================
+# IDE / SISTEMA
+# ========================
 .vscode/
 .DS_Store

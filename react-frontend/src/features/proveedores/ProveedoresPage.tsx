@@ -33,6 +33,7 @@ type ProveedorRecord = {
   fecha_registro: string
 }
 
+// Validación completa del proveedor, igual a la que aplica Prisma.
 const proveedorSchema = z.object({
   nombre_proveedor: z.string().trim().min(3, "El nombre es obligatorio").max(100, "Máximo 100 caracteres"),
   ruc_cedula: z
@@ -75,6 +76,7 @@ type ApiErrorResponse = {
   message?: string
 }
 
+// Set inicial para abrir/cerrar el modal sin dejar residuos.
 const defaultValues: ProveedorFormValues = {
   nombre_proveedor: "",
   ruc_cedula: "",
@@ -83,8 +85,10 @@ const defaultValues: ProveedorFormValues = {
   direccion: "",
 }
 
+// Las tarjetas laterales usan este formato humano.
 const dateFormatter = new Intl.DateTimeFormat("es-EC", { dateStyle: "medium" })
 
+// Reutilizamos el mismo parser de errores en los mutate.
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (isAxiosError<ApiErrorResponse>(error)) {
     return error.response?.data?.error ?? error.response?.data?.message ?? fallback
@@ -102,11 +106,13 @@ export default function ProveedoresPage() {
   const [editingProvider, setEditingProvider] = useState<ProveedorRecord | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // React Hook Form lleva todo el estado y se apoya en el schema anterior.
   const form = useForm<ProveedorFormValues>({
     resolver: zodResolver(proveedorSchema),
     defaultValues,
   })
 
+  // Trae todos los proveedores para mostrarlos en la tabla central.
   const proveedoresQuery = useQuery<ProveedorRecord[]>({
     queryKey: ["proveedores"],
     enabled: isAdmin,
@@ -116,6 +122,7 @@ export default function ProveedoresPage() {
     },
   })
 
+  // Helper único para cerrar el modal y limpiar errores.
   const closeDialog = () => {
     setDialogOpen(false)
     setEditingProvider(null)
@@ -123,6 +130,7 @@ export default function ProveedoresPage() {
     form.reset(defaultValues)
   }
 
+  // Abre el modal listo para registrar un nuevo proveedor.
   const openCreate = () => {
     setEditingProvider(null)
     setFormError(null)
@@ -130,6 +138,7 @@ export default function ProveedoresPage() {
     setDialogOpen(true)
   }
 
+  // Carga la información en el formulario para editarla sin salir de la tabla.
   const openEdit = (proveedor: ProveedorRecord) => {
     setEditingProvider(proveedor)
     setFormError(null)
@@ -143,6 +152,7 @@ export default function ProveedoresPage() {
     setDialogOpen(true)
   }
 
+  // Normalizamos whitespace antes de mandar la petición.
   const buildPayload = (values: ProveedorFormValues): ProveedorPayload => ({
     nombre_proveedor: values.nombre_proveedor.trim(),
     ruc_cedula: values.ruc_cedula.trim(),
@@ -151,6 +161,7 @@ export default function ProveedoresPage() {
     direccion: values.direccion?.trim() ? values.direccion.trim() : null,
   })
 
+  // POST /proveedor: al terminar invalidamos la query y cerramos el modal.
   const createMutation = useMutation({
     mutationFn: (payload: ProveedorPayload) => api.post("/proveedor", payload).then((res) => res.data),
     onSuccess: () => {
@@ -162,6 +173,7 @@ export default function ProveedoresPage() {
     },
   })
 
+  // PUT /proveedor/:id comparte la misma cadencia que el alta.
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: ProveedorPayload }) =>
       api.put(`/proveedor/${id}`, payload).then((res) => res.data),
@@ -174,6 +186,7 @@ export default function ProveedoresPage() {
     },
   })
 
+  // DELETE /proveedor/:id: si falla mostramos la razón tal como viene del backend.
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/proveedor/${id}`),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proveedores"] }),
@@ -186,6 +199,7 @@ export default function ProveedoresPage() {
     },
   })
 
+  // Form handler único: decide entre crear y actualizar según `editingProvider`.
   const onSubmit = form.handleSubmit((values) => {
     const payload = buildPayload(values)
     if (editingProvider) {
@@ -195,6 +209,7 @@ export default function ProveedoresPage() {
     }
   })
 
+  // Confirmación simple para evitar borrar proveedores activos accidentalmente.
   const handleDelete = (proveedor: ProveedorRecord) => {
     if (deleteMutation.isPending) return
     const confirmed = window.confirm(

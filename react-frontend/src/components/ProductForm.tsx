@@ -2,6 +2,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 
+// Formulario genérico para crear/editar productos desde cualquier modal.
+
 export interface Proveedor {
   id_proveedor: number;
   nombre_proveedor: string;

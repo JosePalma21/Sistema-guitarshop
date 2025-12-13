@@ -108,7 +108,7 @@ export async function crearCompra(data: {
     return { ...item, subtotal: sub };
   });
 
-  const IVA = 0.12; // ajusta si tu ing quiere otro
+  const IVA = 0.15; // 15% IVA segun nuevo requerimiento
   const impuesto = Number((subtotal * IVA).toFixed(2));
   const total = Number((subtotal + impuesto).toFixed(2));
 

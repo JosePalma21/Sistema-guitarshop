@@ -22,6 +22,7 @@ async function fetchDashboard(): Promise<DashboardResponse> {
   return data
 }
 
+// Encapsula la consulta del dashboard para reutilizar caché y políticas de refresco.
 export function useDashboardData() {
   return useQuery({
     queryKey: ["dashboard"],

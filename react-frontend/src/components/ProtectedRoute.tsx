@@ -20,7 +20,7 @@ export default function ProtectedRoute() {
       return <Navigate to="/login" replace />;
     }
   } catch {
-    // Token inválido o roto
+    // Token inválido o roto (sin payload legible)
     localStorage.removeItem("auth_token");
     return <Navigate to="/login" replace />;
   }

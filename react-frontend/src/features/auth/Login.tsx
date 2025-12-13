@@ -35,6 +35,7 @@ export default function Login() {
     resolver: zodResolver(loginSchema), // Integra las reglas de Zod con react-hook-form.
   })
 
+  // Si ya existe un token, evitamos que el usuario vuelva a tocar el login.
   useEffect(() => {
     const token = localStorage.getItem("auth_token")
     if (token) {
@@ -42,6 +43,7 @@ export default function Login() {
     }
   }, [navigate])
 
+  // Este submit llama a /login, guarda el token y redirige en menos de 2 segundos.
   const onSubmit = async (data: LoginInput) => {
     try {
       setApiError(null) // Limpiamos error previo antes de un nuevo intento.
@@ -87,6 +89,7 @@ export default function Login() {
           </div>
         )}
 
+        {/* Formulario mínimo: dos campos validados con Zod y feedback inmediato. */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="flex flex-col gap-1">
             <label htmlFor="email" className="text-sm font-medium text-slate-800">

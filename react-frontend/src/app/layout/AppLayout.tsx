@@ -16,6 +16,7 @@ type StoredUser = {
   rol?: string;
 };
 
+// Menú lateral principal del panel, cada entrada apunta a un módulo.
 const navItems: NavItem[] = [
   { label: "Dashboard", to: "/dashboard", icon: Home },
   { label: "Productos", to: "/productos", icon: Package },
@@ -29,6 +30,7 @@ const navItems: NavItem[] = [
 export const AppLayout = () => {
   const navigate = useNavigate();
 
+  // Convertimos el auth_user guardado para mostrar datos en el header.
   const storedUser = useMemo<StoredUser | null>(() => {
     const raw = localStorage.getItem("auth_user");
     if (!raw) return null;
@@ -40,6 +42,7 @@ export const AppLayout = () => {
     }
   }, []);
 
+  // Limpia sesión local y reenvía al login en un solo paso.
   const handleLogout = () => {
     localStorage.removeItem("auth_token");
     localStorage.removeItem("auth_user");
@@ -54,7 +57,7 @@ export const AppLayout = () => {
   return (
     <div className="min-h-screen bg-slate-100 text-slate-900">
       <div className="grid min-h-screen grid-cols-[220px_1fr]">
-        {/* SIDEBAR */}
+        {/* SIDEBAR: navegación fija de toda la aplicación */}
         <aside className="border-r border-slate-200 bg-white p-4">
           <div className="mb-6">
             <h1 className="text-xl font-bold text-slate-900">GuitarShop</h1>
@@ -82,7 +85,7 @@ export const AppLayout = () => {
 
         {/* CONTENIDO */}
         <div className="flex min-h-screen flex-col">
-          {/* HEADER SUPERIOR */}
+          {/* HEADER SUPERIOR: info del usuario activo y botón de salida */}
           <header className="flex items-center justify-between border-b border-slate-200 bg-white px-6 py-3">
             <div>
               <p className="text-sm font-medium text-slate-800">
@@ -115,7 +118,7 @@ export const AppLayout = () => {
             </div>
           </header>
 
-          {/* CONTENIDO DE CADA PANTALLA */}
+          {/* CONTENIDO DE CADA PANTALLA (Outlet de React Router) */}
           <main className="flex-1 overflow-y-auto p-6">
             <Outlet />
           </main>

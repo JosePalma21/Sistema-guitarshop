@@ -16,6 +16,60 @@ const facturaSelectBase = {
   id_estado: true,
 } as const;
 
+const facturaDetalleSelect = {
+  ...facturaSelectBase,
+  cliente: {
+    select: {
+      id_cliente: true,
+      nombres: true,
+      apellidos: true,
+      cedula: true,
+    },
+  },
+  usuario: {
+    select: {
+      id_usuario: true,
+      nombre_completo: true,
+    },
+  },
+  detalle_factura: {
+    select: {
+      id_detalle_factura: true,
+      id_producto: true,
+      cantidad: true,
+      precio_unitario: true,
+      descuento: true,
+      subtotal: true,
+      producto: {
+        select: {
+          codigo_producto: true,
+          nombre_producto: true,
+        },
+      },
+    },
+  },
+  credito: {
+    select: {
+      id_credito: true,
+      monto_total: true,
+      saldo_pendiente: true,
+      fecha_inicio: true,
+      fecha_fin: true,
+      cuota: {
+        select: {
+          id_cuota: true,
+          numero_cuota: true,
+          fecha_vencimiento: true,
+          monto_cuota: true,
+          monto_pagado: true,
+          estado_cuota: true,
+        },
+        orderBy: { numero_cuota: "asc" },
+      },
+    },
+  },
+} as const;
+
 type DetalleVentaInput = {
   id_producto: number;
   cantidad: number;
@@ -63,59 +117,7 @@ export async function listarVentas() {
 export async function obtenerVentaPorId(id: number) {
   const factura = await prisma.factura.findUnique({
     where: { id_factura: id },
-    select: {
-      ...facturaSelectBase,
-      cliente: {
-        select: {
-          id_cliente: true,
-          nombres: true,
-          apellidos: true,
-          cedula: true,
-        },
-      },
-      usuario: {
-        select: {
-          id_usuario: true,
-          nombre_completo: true,
-        },
-      },
-      detalle_factura: {
-        select: {
-          id_detalle_factura: true,
-          id_producto: true,
-          cantidad: true,
-          precio_unitario: true,
-          descuento: true,
-          subtotal: true,
-          producto: {
-            select: {
-              codigo_producto: true,
-              nombre_producto: true,
-            },
-          },
-        },
-      },
-      credito: {
-        select: {
-          id_credito: true,
-          monto_total: true,
-          saldo_pendiente: true,
-          fecha_inicio: true,
-          fecha_fin: true,
-          cuota: {
-            select: {
-              id_cuota: true,
-              numero_cuota: true,
-              fecha_vencimiento: true,
-              monto_cuota: true,
-              monto_pagado: true,
-              estado_cuota: true,
-            },
-            orderBy: { numero_cuota: "asc" },
-          },
-        },
-      },
-    },
+    select: facturaDetalleSelect,
   });
 
   return factura;
@@ -152,7 +154,7 @@ export async function crearVenta(data: {
     };
   });
 
-  const IVA = 0.12; // 12% IVA
+  const IVA = 0.15; // 15% IVA
   const impuesto = Number((subtotalFactura * IVA).toFixed(2));
   const total = Number((subtotalFactura + impuesto).toFixed(2));
 
@@ -301,62 +303,147 @@ export async function crearVenta(data: {
     // 2.6) Devolver factura completa
     const facturaCompleta = await tx.factura.findUnique({
       where: { id_factura: nuevaFactura.id_factura },
+      select: facturaDetalleSelect,
+    });
+
+    return facturaCompleta;
+  });
+
+  return resultado;
+}
+
+// ==========================
+// ACTUALIZAR OBSERVACIÓN
+// ==========================
+export async function actualizarVenta(dataId: number, data: {
+  observacion?: string | null;
+  id_usuario_modifi?: number | null;
+}) {
+  const existe = await prisma.factura.findUnique({
+    where: { id_factura: dataId },
+    select: { id_factura: true },
+  });
+
+  if (!existe) {
+    throw new Error("VENTA_NO_ENCONTRADA");
+  }
+
+  const updateData: Prisma.facturaUpdateInput = {};
+
+  if (data.observacion !== undefined) {
+    const obs = data.observacion?.trim();
+    updateData.observacion = obs && obs.length > 0 ? obs : null;
+  }
+
+  if (data.id_usuario_modifi !== undefined) {
+    updateData.id_usuario_modifi = data.id_usuario_modifi;
+  }
+
+  if (Object.keys(updateData).length > 0) {
+    await prisma.factura.update({
+      where: { id_factura: dataId },
+      data: updateData,
+    });
+  }
+
+  return obtenerVentaPorId(dataId);
+}
+
+// ==========================
+// ANULAR VENTA (restituir stock)
+// ==========================
+export async function anularVenta(
+  id: number,
+  id_usuario_modifi?: number | null
+) {
+  const estadoAnulado = await prisma.estado_registro.findFirst({
+    where: { nombre_estado: "ANULADO" },
+    select: { id_estado: true },
+  });
+
+  if (!estadoAnulado) {
+    throw new Error("ESTADO_ANULADO_NO_CONFIGURADO");
+  }
+
+  const resultado = await prisma.$transaction(async (tx) => {
+    const factura = await tx.factura.findUnique({
+      where: { id_factura: id },
       select: {
-        ...facturaSelectBase,
-        cliente: {
-          select: {
-            id_cliente: true,
-            nombres: true,
-            apellidos: true,
-            cedula: true,
-          },
-        },
-        usuario: {
-          select: {
-            id_usuario: true,
-            nombre_completo: true,
-          },
-        },
+        id_factura: true,
+        numero_factura: true,
+        id_estado: true,
         detalle_factura: {
           select: {
-            id_detalle_factura: true,
             id_producto: true,
             cantidad: true,
             precio_unitario: true,
-            descuento: true,
-            subtotal: true,
-            producto: {
-              select: {
-                codigo_producto: true,
-                nombre_producto: true,
-              },
-            },
           },
         },
         credito: {
-          select: {
-            id_credito: true,
-            monto_total: true,
-            saldo_pendiente: true,
-            fecha_inicio: true,
-            fecha_fin: true,
-            cuota: {
-              select: {
-                id_cuota: true,
-                numero_cuota: true,
-                fecha_vencimiento: true,
-                monto_cuota: true,
-                monto_pagado: true,
-                estado_cuota: true,
-              },
-              orderBy: { numero_cuota: "asc" },
-            },
-          },
+          select: { id_credito: true },
         },
       },
     });
 
-    return facturaCompleta;
+    if (!factura) {
+      throw new Error("VENTA_NO_ENCONTRADA");
+    }
+
+    if (factura.id_estado === estadoAnulado.id_estado) {
+      throw new Error("VENTA_YA_ANULADA");
+    }
+
+    for (const item of factura.detalle_factura) {
+      await tx.producto.update({
+        where: { id_producto: item.id_producto },
+        data: {
+          cantidad_stock: {
+            increment: item.cantidad,
+          },
+        },
+      });
+
+      await tx.kardex.create({
+        data: {
+          id_producto: item.id_producto,
+          tipo_movimiento: "ENTRADA",
+          origen: "AJUSTE",
+          id_referencia: factura.id_factura,
+          cantidad: item.cantidad,
+          costo_unitario: item.precio_unitario,
+          comentario: `Reverso de ${factura.numero_factura}`,
+          id_estado: 1,
+          id_usuario_modifi: id_usuario_modifi ?? null,
+        },
+      });
+    }
+
+    if (factura.credito) {
+      await tx.credito.delete({
+        where: { id_credito: factura.credito.id_credito },
+      });
+    }
+
+    await tx.detalle_factura.updateMany({
+      where: { id_factura: factura.id_factura },
+      data: {
+        id_estado: estadoAnulado.id_estado,
+        id_usuario_modifi: id_usuario_modifi ?? null,
+      },
+    });
+
+    await tx.factura.update({
+      where: { id_factura: factura.id_factura },
+      data: {
+        id_estado: estadoAnulado.id_estado,
+        id_usuario_modifi: id_usuario_modifi ?? null,
+      },
+    });
+
+    return tx.factura.findUnique({
+      where: { id_factura: factura.id_factura },
+      select: facturaDetalleSelect,
+    });
   });
 
   return resultado;

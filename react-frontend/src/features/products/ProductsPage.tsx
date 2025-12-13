@@ -52,6 +52,7 @@ const isValidUrl = (value: string) => {
   }
 }
 
+// Espejo de las restricciones Prisma para evitar errores al sincronizar productos.
 const productoSchema = z.object({
   codigo_producto: z.string().trim().min(1, "El código es obligatorio").max(30, "Máximo 30 caracteres"),
   nombre_producto: z.string().trim().min(1, "El nombre es obligatorio").max(100, "Máximo 100 caracteres"),
@@ -94,12 +95,14 @@ type ProductoPayload = {
   stock_minimo: number
 }
 
+// Reutilizamos el mismo formato monetario en tarjetas, tabla y resumen.
 const currency = new Intl.NumberFormat("es-EC", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
 })
 
+// Valores iniciales para abrir el modal listo para escribir.
 const defaultValues: Partial<ProductoFormValues> = {
   codigo_producto: "",
   nombre_producto: "",
@@ -117,6 +120,7 @@ type ApiErrorResponse = {
   message?: string
 }
 
+// Helper estándar para surfear los mensajes del backend.
 const getApiErrorMessage = (error: unknown, fallback: string) => {
   if (isAxiosError<ApiErrorResponse>(error)) {
     return error.response?.data?.error ?? error.response?.data?.message ?? fallback
@@ -134,6 +138,7 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<ProductoRecord | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
 
+  // Hook principal del formulario con todas las reglas de zodResolver.
   const form = useForm<ProductoFormValues>({
     resolver: zodResolver(productoSchema),
     defaultValues,
@@ -150,6 +155,7 @@ export default function ProductsPage() {
     }
   }, [watchedImageUrl])
 
+  // Lista completa de productos, ya con números normalizados.
   const productosQuery = useQuery<ProductoRecord[]>({
     queryKey: ["productos"],
     enabled: isAdmin,
@@ -166,6 +172,7 @@ export default function ProductsPage() {
     },
   })
 
+  // Sirve para poblar el combo de proveedores dentro del modal.
   const proveedoresQuery = useQuery<ProveedorRecord[]>({
     queryKey: ["proveedores"],
     enabled: isAdmin,
@@ -175,6 +182,7 @@ export default function ProductsPage() {
     },
   })
 
+  // Consumimos el store de imágenes separado para no mezclarlo con Prisma.
   const imagenesQuery = useQuery<Record<number, string>>({
     queryKey: ["product-images"],
     enabled: isAdmin,
@@ -193,6 +201,7 @@ export default function ProductsPage() {
     },
   })
 
+  // Este servicio guarda la URL compartida del producto y refresca la cache local.
   const saveProductImage = useCallback(
     async (productId: number, url: string | null) => {
       await api.post("/producto/imagen", {
@@ -204,6 +213,7 @@ export default function ProductsPage() {
     [queryClient]
   )
 
+  // Resetea el formulario y oculta el modal.
   const closeDialog = () => {
     setDialogOpen(false)
     setEditingProduct(null)
@@ -211,6 +221,7 @@ export default function ProductsPage() {
     form.reset(defaultValues)
   }
 
+  // Prepara la UI para un alta desde cero.
   const openCreate = () => {
     setEditingProduct(null)
     setFormError(null)
@@ -218,6 +229,7 @@ export default function ProductsPage() {
     setDialogOpen(true)
   }
 
+  // Llena el formulario con el producto seleccionado, incluyendo imagen en caché.
   const openEdit = (producto: ProductoRecord) => {
     setEditingProduct(producto)
     setFormError(null)
@@ -235,6 +247,7 @@ export default function ProductsPage() {
     setDialogOpen(true)
   }
 
+  // POST /producto y luego guarda la imagen en el store secundario.
   const createMutation = useMutation({
     mutationFn: ({ payload }: { payload: ProductoPayload; imageUrl: string | null }) =>
       api.post<ProductoRecord>("/producto", payload).then((res) => res.data),
@@ -253,6 +266,7 @@ export default function ProductsPage() {
     },
   })
 
+  // PUT /producto/:id + actualización de imagen para mantener consistencia.
   const updateMutation = useMutation({
     mutationFn: ({ id, payload }: { id: number; payload: ProductoPayload; imageUrl: string | null }) =>
       api.put(`/producto/${id}`, payload).then((res) => res.data),
@@ -271,6 +285,7 @@ export default function ProductsPage() {
     },
   })
 
+  // DELETE /producto/:id, y de inmediato limpiamos la imagen persistida.
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/producto/${id}`),
     onSuccess: async (_, id) => {
@@ -283,6 +298,7 @@ export default function ProductsPage() {
     },
   })
 
+  // Handler único para crear o editar según exista `editingProduct`.
   const onSubmit = form.handleSubmit((values) => {
     const imageUrl = values.imagen_url?.trim() ? values.imagen_url.trim() : null
     const proveedorId = Number(values.id_proveedor)
@@ -305,6 +321,7 @@ export default function ProductsPage() {
     }
   })
 
+  // Pedimos confirmación básica para evitar borrar inventario sin querer.
   const handleDelete = (producto: ProductoRecord) => {
     if (deleteMutation.isPending) return
     const confirmed = window.confirm(

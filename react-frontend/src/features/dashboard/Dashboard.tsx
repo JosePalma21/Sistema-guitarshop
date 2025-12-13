@@ -4,9 +4,11 @@ import { AlertCircle, BarChart3, CreditCard, Package, RefreshCcw, ShoppingBag, T
 import { useDashboardData } from "../../lib/hooks/useDashboardData"
 import { cn } from "../../lib/utils"
 
+// Todas las métricas del tablero se redondean para lectura rápida.
 const numberFormat = new Intl.NumberFormat("es-EC", { maximumFractionDigits: 0 })
 
 export default function Dashboard() {
+  // Hook dedicado que concentra las queries y el estado de refresco.
   const {
     data,
     isLoading,
@@ -16,6 +18,7 @@ export default function Dashboard() {
   } = useDashboardData()
 
   if (isLoading) {
+    // Skeleton súper liviano mientras esperamos la data del backend.
     return (
       <div className="space-y-3">
         <div className="h-8 w-48 animate-pulse rounded bg-slate-200" />
@@ -52,6 +55,7 @@ export default function Dashboard() {
 
   if (!data) return null
 
+  // Tarjetas superiores comparten este arreglo para mantener consistencia visual.
   const statCards = [
     {
       label: "Clientes activos",

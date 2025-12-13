@@ -14,6 +14,10 @@ export interface AuthResult {
   message?: string;
 }
 
+export function hasAdminRole(auth: AuthResult): boolean {
+  return !!auth.rol && auth.rol.toUpperCase() === "ADMIN";
+}
+
 // Extrae el token del header Authorization: Bearer xxx
 function getTokenFromRequest(req: Request): string | null {
   const authHeader =

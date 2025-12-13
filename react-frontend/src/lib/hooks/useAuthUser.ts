@@ -7,6 +7,7 @@ export type AuthUser = {
   rol?: string;
 };
 
+// Hook centralizado para leer el usuario logueado y validar rol ADMIN.
 export function useAuthUser() {
   const authUser = useMemo<AuthUser | null>(() => {
     if (typeof window === "undefined") return null;
