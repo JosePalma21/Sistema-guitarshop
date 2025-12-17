@@ -1,13 +1,5 @@
-import { 
-  LayoutDashboard, 
-  ShoppingCart, 
-  Users, 
-  Package, 
-  UserCheck, 
-  Receipt,
-  CreditCard,
-  type LucideIcon 
-} from "lucide-react"
+import type { LucideIcon } from "lucide-react"
+import { CreditCard, Home, Package, ReceiptText, ShoppingCart, Truck, Users } from "lucide-react"
 
 export type NavItem = {
   label: string
@@ -16,39 +8,11 @@ export type NavItem = {
 }
 
 export const appNavItems: NavItem[] = [
-  {
-    label: "Dashboard",
-    to: "/dashboard",
-    icon: LayoutDashboard,
-  },
-  {
-    label: "Productos",
-    to: "/productos",
-    icon: Package,
-  },
-  {
-    label: "Clientes",
-    to: "/clientes",
-    icon: Users,
-  },
-  {
-    label: "Ventas",
-    to: "/ventas",
-    icon: Receipt,
-  },
-  {
-    label: "Compras",
-    to: "/compras",
-    icon: ShoppingCart,
-  },
-  {
-    label: "Proveedores",
-    to: "/proveedores",
-    icon: UserCheck,
-  },
-  {
-    label: "Créditos",
-    to: "/creditos",
-    icon: CreditCard,
-  },
+  { label: "Dashboard", to: "/dashboard", icon: Home },
+  { label: "Productos", to: "/productos", icon: Package },
+  { label: "Ventas", to: "/ventas", icon: ShoppingCart },
+  { label: "Compras", to: "/compras", icon: ReceiptText },
+  { label: "Clientes", to: "/clientes", icon: Users },
+  { label: "Proveedores", to: "/proveedores", icon: Truck },
+  { label: "Créditos", to: "/creditos", icon: CreditCard },
 ]
