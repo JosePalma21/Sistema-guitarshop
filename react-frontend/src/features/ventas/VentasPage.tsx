@@ -380,8 +380,8 @@ export default function VentasPage() {
   })
 
   const ventas = useMemo(() => ventasQuery.data ?? [], [ventasQuery.data])
-  const clientes = clientesQuery.data ?? []
-  const productos = productosQuery.data ?? []
+  const clientes = useMemo(() => clientesQuery.data ?? [], [clientesQuery.data])
+  const productos = useMemo(() => productosQuery.data ?? [], [productosQuery.data])
 
   const productosMap = useMemo(() => {
     const map = new Map<number, ProductoOption>()

@@ -22,6 +22,7 @@ import {
 import { api } from "../../lib/apiClient"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog"
 import { useAuthUser } from "../../lib/hooks/useAuthUser"
+import { detectEcuadorIdType, formatEcuadorIdTypeLabel, validateEcuadorId } from "./ecuadorId"
 
 type ProveedorRecord = {
   id_proveedor: number
@@ -36,10 +37,7 @@ type ProveedorRecord = {
 // Validación completa del proveedor, igual a la que aplica Prisma.
 const proveedorSchema = z.object({
   nombre_proveedor: z.string().trim().min(3, "El nombre es obligatorio").max(100, "Máximo 100 caracteres"),
-  ruc_cedula: z
-    .string()
-    .trim()
-    .regex(/^\d{10,13}$/, "Debe tener entre 10 y 13 dígitos"),
+  ruc_cedula: z.string().trim(),
   correo: z
     .string()
     .trim()
@@ -50,7 +48,7 @@ const proveedorSchema = z.object({
   telefono: z
     .string()
     .trim()
-    .regex(/^[0-9+\-\s]{7,20}$/i, "Teléfono no válido")
+    .regex(/^\d{9,10}$/i, "Teléfono no válido")
     .optional()
     .or(z.literal("")),
   direccion: z
@@ -59,6 +57,27 @@ const proveedorSchema = z.object({
     .max(150, "Máximo 150 caracteres")
     .optional()
     .or(z.literal("")),
+}).superRefine((values, ctx) => {
+  const raw = values.ruc_cedula?.trim() ?? ""
+  const digits = raw.replace(/\D/g, "")
+
+  if (digits.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ruc_cedula"],
+      message: "Formato incorrecto",
+    })
+    return
+  }
+
+  const result = validateEcuadorId(digits)
+  if (!result.isValid) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["ruc_cedula"],
+      message: result.error,
+    })
+  }
 })
 
 type ProveedorFormValues = z.infer<typeof proveedorSchema>
@@ -105,6 +124,11 @@ export default function ProveedoresPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingProvider, setEditingProvider] = useState<ProveedorRecord | null>(null)
   const [formError, setFormError] = useState<string | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<ProveedorRecord | null>(null)
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // React Hook Form lleva todo el estado y se apoya en el schema anterior.
   const form = useForm<ProveedorFormValues>({
@@ -128,6 +152,12 @@ export default function ProveedoresPage() {
     setEditingProvider(null)
     setFormError(null)
     form.reset(defaultValues)
+  }
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false)
+    setDeleteTarget(null)
+    setDeleteError(null)
   }
 
   // Abre el modal listo para registrar un nuevo proveedor.
@@ -189,13 +219,16 @@ export default function ProveedoresPage() {
   // DELETE /proveedor/:id: si falla mostramos la razón tal como viene del backend.
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.delete(`/proveedor/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proveedores"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["proveedores"] })
+      closeDeleteDialog()
+    },
     onError: (error: unknown) => {
       const message = getApiErrorMessage(
         error,
         "No se pudo eliminar el proveedor. Verifica si tiene compras o productos asociados."
       )
-      window.alert(message)
+      setDeleteError(message)
     },
   })
 
@@ -209,21 +242,37 @@ export default function ProveedoresPage() {
     }
   })
 
-  // Confirmación simple para evitar borrar proveedores activos accidentalmente.
-  const handleDelete = (proveedor: ProveedorRecord) => {
+  const requestDelete = (proveedor: ProveedorRecord) => {
     if (deleteMutation.isPending) return
-    const confirmed = window.confirm(
-      `¿Seguro que deseas eliminar a ${proveedor.nombre_proveedor}? Esta acción es permanente.`
-    )
-    if (confirmed) {
-      deleteMutation.mutate(proveedor.id_proveedor)
-    }
+    setDeleteTarget(proveedor)
+    setDeleteError(null)
+    setDeleteDialogOpen(true)
   }
 
   const proveedores = useMemo(() => proveedoresQuery.data ?? [], [proveedoresQuery.data])
   const totalConCorreo = useMemo(() => proveedores.filter((p) => !!p.correo).length, [proveedores])
   const totalConTelefono = useMemo(() => proveedores.filter((p) => !!p.telefono).length, [proveedores])
   const recientes = useMemo(() => proveedores.slice(-4).reverse(), [proveedores])
+
+  const proveedoresFiltrados = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    const list = term
+      ? proveedores.filter((p) => {
+          const nombre = p.nombre_proveedor.toLowerCase()
+          const doc = p.ruc_cedula.toLowerCase()
+          return nombre.includes(term) || doc.includes(term)
+        })
+      : proveedores
+
+    return [...list].sort((a, b) => a.nombre_proveedor.localeCompare(b.nombre_proveedor, "es"))
+  }, [proveedores, searchTerm])
+
+  const rucCedulaValue = form.watch("ruc_cedula")
+  const rucCedulaDigits = (rucCedulaValue ?? "").replace(/\D/g, "")
+  const rucCedulaType = detectEcuadorIdType(rucCedulaDigits)
+  const rucCedulaLabel = formatEcuadorIdTypeLabel(rucCedulaType)
+  const rucCedulaValidation = validateEcuadorId(rucCedulaDigits)
+  const rucCedulaIsValid = rucCedulaValidation.isValid
 
   if (!isAdmin) {
     return (
@@ -285,6 +334,24 @@ export default function ProveedoresPage() {
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
         <div className="rounded-2xl border border-slate-200 bg-white">
+          <div className="flex flex-col gap-3 border-b border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Listado</p>
+              <p className="text-xs text-slate-500">{proveedoresFiltrados.length} proveedores visibles</p>
+            </div>
+            <div className="w-full sm:max-w-xs">
+              <label className="sr-only" htmlFor="proveedores-search">
+                Buscar proveedor
+              </label>
+              <input
+                id="proveedores-search"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Buscar por nombre o RUC/Cédula"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-slate-200">
               <thead className="bg-slate-50">
@@ -296,7 +363,7 @@ export default function ProveedoresPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 bg-white">
-                {proveedores.map((proveedor) => (
+                {proveedoresFiltrados.map((proveedor) => (
                   <tr key={proveedor.id_proveedor} className="hover:bg-slate-50">
                     <td className="px-6 py-4">
                       <p className="text-sm font-semibold text-slate-900">{proveedor.nombre_proveedor}</p>
@@ -320,13 +387,15 @@ export default function ProveedoresPage() {
                         <button
                           onClick={() => openEdit(proveedor)}
                           className="rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                          title="Editar proveedor"
                         >
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button
-                          onClick={() => handleDelete(proveedor)}
+                          onClick={() => requestDelete(proveedor)}
                           className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
                           disabled={deleteMutation.isPending}
+                          title="Eliminar proveedor"
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -343,10 +412,10 @@ export default function ProveedoresPage() {
               Cargando proveedores...
             </div>
           )}
-          {!proveedoresQuery.isLoading && proveedores.length === 0 && (
+          {!proveedoresQuery.isLoading && proveedoresFiltrados.length === 0 && (
             <div className="p-8 text-center text-slate-500">
               <Building2 size={36} className="mx-auto mb-2 opacity-50" />
-              <p>No hay proveedores registrados.</p>
+              <p>{proveedores.length === 0 ? "No hay proveedores registrados." : "Sin resultados para tu búsqueda."}</p>
             </div>
           )}
         </div>
@@ -386,10 +455,10 @@ export default function ProveedoresPage() {
           }
         }}
       >
-        <DialogContent>
+        <DialogContent className="w-full max-w-2xl" disableOutsideClose={createMutation.isPending || updateMutation.isPending}>
           <DialogHeader>
             <DialogTitle>{editingProvider ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
-            <DialogDescription>Todos los campos serán validados con las reglas del backend.</DialogDescription>
+            <DialogDescription>Completa los datos y guarda. El documento se valida con reglas de Ecuador.</DialogDescription>
           </DialogHeader>
 
           {formError && (
@@ -409,14 +478,35 @@ export default function ProveedoresPage() {
                 )}
               </div>
               <div>
-                <label className="text-xs font-medium uppercase text-slate-500">RUC / Cédula</label>
+                <div className="flex items-end justify-between gap-2">
+                  <label className="text-xs font-medium uppercase text-slate-500">RUC / Cédula</label>
+                  {rucCedulaLabel ? (
+                    <p className="text-xs font-medium text-slate-500">Detectado: {rucCedulaLabel}</p>
+                  ) : (
+                    <span />
+                  )}
+                </div>
                 <input
-                  {...form.register("ruc_cedula")}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  placeholder="13 dígitos"
+                  {...form.register("ruc_cedula", {
+                    setValueAs: (value) => String(value ?? "").replace(/\D/g, ""),
+                  })}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  className={
+                    "mt-1 w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-1 " +
+                    (form.formState.errors.ruc_cedula
+                      ? "border-red-300 focus:border-red-500 focus:ring-red-500"
+                      : rucCedulaDigits.length > 0 && rucCedulaIsValid
+                        ? "border-emerald-300 focus:border-emerald-500 focus:ring-emerald-500"
+                        : "border-slate-300 focus:border-emerald-500 focus:ring-emerald-500")
+                  }
+                  placeholder="10 dígitos (Cédula) o 13 (RUC, termina en 001)"
                 />
                 {form.formState.errors.ruc_cedula && (
                   <p className="mt-1 text-xs text-red-600">{form.formState.errors.ruc_cedula.message}</p>
+                )}
+                {!form.formState.errors.ruc_cedula && rucCedulaDigits.length > 0 && !rucCedulaIsValid && (
+                  <p className="mt-1 text-xs text-red-600">{rucCedulaValidation.error}</p>
                 )}
               </div>
             </div>
@@ -438,7 +528,10 @@ export default function ProveedoresPage() {
                 <label className="text-xs font-medium uppercase text-slate-500">Teléfono</label>
                 <input
                   type="tel"
-                  {...form.register("telefono")}
+                  {...form.register("telefono", {
+                    setValueAs: (value) => String(value ?? "").replace(/\D/g, ""),
+                  })}
+                  inputMode="numeric"
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   placeholder="0999999999"
                 />
@@ -466,19 +559,69 @@ export default function ProveedoresPage() {
                 type="button"
                 onClick={closeDialog}
                 className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                disabled={createMutation.isPending || updateMutation.isPending}
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                disabled={createMutation.isPending || updateMutation.isPending}
+                disabled={createMutation.isPending || updateMutation.isPending || !form.formState.isValid}
               >
                 {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="h-4 w-4 animate-spin" />}
                 Guardar
               </button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) closeDeleteDialog()
+          else setDeleteDialogOpen(true)
+        }}
+      >
+        <DialogContent className="w-full max-w-md" disableOutsideClose={deleteMutation.isPending}>
+          <DialogHeader>
+            <DialogTitle>Eliminar proveedor</DialogTitle>
+            <DialogDescription>Esta acción no se puede deshacer.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              <p className="font-medium text-slate-900">¿Estás seguro de eliminar este proveedor?</p>
+              <p className="mt-1 text-slate-600">{deleteTarget?.nombre_proveedor ?? ""}</p>
+            </div>
+
+            {deleteError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{deleteError}</div>
+            )}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeDeleteDialog}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                disabled={deleteMutation.isPending}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!deleteTarget || deleteMutation.isPending) return
+                  deleteMutation.mutate(deleteTarget.id_proveedor)
+                }}
+                className="inline-flex items-center gap-2 rounded-lg border border-red-200 bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:opacity-60"
+                disabled={!deleteTarget || deleteMutation.isPending}
+              >
+                {deleteMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+                Eliminar
+              </button>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

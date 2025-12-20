@@ -7,15 +7,13 @@ import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import {
 	AlertCircle,
 	Boxes,
 	Download,
-	Eye,
 	Edit2,
 	FileDown,
-	FileSpreadsheet,
 	Image as ImageIcon,
 	Loader2,
 	Package,
@@ -33,6 +31,12 @@ import { api } from "../../lib/apiClient"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog"
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "../../components/ui/drawer"
 import { useAuthUser } from "../../lib/hooks/useAuthUser"
+import {
+	getCategoryPrefix,
+	matchCategoryValue,
+	productCategories,
+	type ProductCategoryValue,
+} from "../../config/productCategories"
 
 type ProductoRecord = {
 	id_producto: number
@@ -89,17 +93,6 @@ type ProductSalesSummary = {
 	lastSaleDate: string | null
 	recentLines: ProductSaleLine[]
 }
-
-const productCategories = [
-	{ value: "cuerdas", label: "Cuerdas", prefix: "CRD" },
-	{ value: "amplificadores", label: "Amplificadores", prefix: "AMP" },
-	{ value: "accesorios", label: "Accesorios", prefix: "ACC" },
-	{ value: "guitarras", label: "Guitarras", prefix: "GTR" },
-	{ value: "bajos", label: "Bajos", prefix: "BAS" },
-	{ value: "percusion", label: "Percusión", prefix: "PER" },
-] as const
-
-type ProductCategoryValue = (typeof productCategories)[number]["value"]
 
 type ModalMode = "single" | "import"
 
@@ -169,13 +162,6 @@ const importFieldConfig: { key: ImportFieldKey; label: string; required: boolean
 	{ key: "descripcion", label: "Descripción", required: false },
 	{ key: "codigo_producto", label: "Código (opcional)", required: false },
 ]
-
-const categoryByValue = new Map<ProductCategoryValue, string>()
-const categoryByPrefix = new Map<string, ProductCategoryValue>()
-productCategories.forEach((item) => {
-	categoryByValue.set(item.value, item.prefix)
-	categoryByPrefix.set(item.prefix, item.value)
-})
 
 const productoSchema = z.object({
 	categoria: z.string().min(1, "Selecciona una categoría"),
@@ -266,12 +252,10 @@ const normalizeNumber = (value: unknown) => {
 	return 0
 }
 
-const getCategoryPrefix = (value: ProductCategoryValue | "") => (value ? categoryByValue.get(value) ?? null : null)
-
 const inferCategoryFromCode = (code: string) => {
 	const match = code?.toUpperCase().match(/^([A-Z]{3})-/)
 	if (!match) return null
-	return categoryByPrefix.get(match[1]) ?? null
+	return matchCategoryValue(match[1])
 }
 
 const buildNextCode = (prefix: string, takenCodes: Set<string>) => {
@@ -356,16 +340,6 @@ const guessColumnKey = (headers: string[], keywords: string[]) => {
 	)
 }
 
-const matchCategoryValue = (value: string): ProductCategoryValue | null => {
-	const normalized = value.trim().toLowerCase()
-	if (!normalized) return null
-	return (
-		productCategories.find((item) =>
-			item.value === normalized || item.label.toLowerCase().includes(normalized) || normalized.includes(item.prefix.toLowerCase())
-		)?.value ?? null
-	)
-}
-
 const resolveProveedorId = (value: string, proveedores: ProveedorRecord[]) => {
 	const normalized = value.trim().toLowerCase()
 	if (!normalized) return null
@@ -398,6 +372,7 @@ export default function ProductsPage() {
 	const { isAdmin } = useAuthUser()
 	const queryClient = useQueryClient()
 	const navigate = useNavigate()
+	const location = useLocation()
 	const [dialogOpen, setDialogOpen] = useState(false)
 	const [modalMode, setModalMode] = useState<ModalMode>("single")
 	const [editingProduct, setEditingProduct] = useState<ProductoRecord | null>(null)
@@ -543,6 +518,18 @@ export default function ProductsPage() {
 		setDetailProduct(producto)
 		setDetailOpen(true)
 	}
+
+	useEffect(() => {
+		if (!isAdmin) return
+		const state = location.state as { focusProductId?: number } | null
+		const focusProductId = state?.focusProductId
+		if (!focusProductId) return
+		const productos = productosQuery.data ?? []
+		const match = productos.find((producto) => producto.id_producto === focusProductId)
+		if (!match) return
+		openDetail(match)
+		navigate(location.pathname, { replace: true, state: null })
+	}, [isAdmin, location.pathname, location.state, navigate, productosQuery.data])
 
 	const closeDetail = () => {
 		setDetailOpen(false)
@@ -1156,24 +1143,6 @@ export default function ProductsPage() {
 								<Plus className="h-4 w-4" />
 								Registrar productos
 							</button>
-						<label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">
-							<FileSpreadsheet className="h-4 w-4" />
-							Importar Excel
-							<input
-								type="file"
-								accept=".xlsx,.xls"
-								onChange={(event) => {
-									const file = event.target.files?.[0]
-									if (file) {
-										openCreate("import")
-										handleImportFile(file)
-										event.target.value = ""
-									}
-								}}
-								className="hidden"
-								disabled={noProveedoresDisponibles}
-							/>
-						</label>
 					</div>
 					{noProveedoresDisponibles && (
 						<p className="text-xs text-amber-700">Crea un proveedor para habilitar este módulo.</p>
@@ -1341,16 +1310,6 @@ export default function ProductsPage() {
 											{producto.descripcion && <p className="mt-1 line-clamp-1 text-xs text-slate-500">{producto.descripcion}</p>}
 										</div>
 										<div className="flex shrink-0 items-center gap-2">
-											<button
-												onClick={(event) => {
-												event.stopPropagation()
-												openDetail(producto)
-											}}
-											className="rounded-xl border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-											aria-label="Ver detalle"
-											>
-												<Eye className="h-4 w-4" />
-											</button>
 											<button
 												onClick={(event) => {
 												event.stopPropagation()
