@@ -1,9 +1,6 @@
 "use client"
 
-import { type ChangeEvent, useEffect, useMemo, useState } from "react"
-import { useFieldArray, useForm, useWatch } from "react-hook-form"
-import { z } from "zod"
-import { zodResolver } from "@hookform/resolvers/zod"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import {
@@ -15,7 +12,6 @@ import {
   Loader2,
   MoreHorizontal,
   Plus,
-  PackagePlus,
   ReceiptText,
   ShieldAlert,
   TrendingUp,
@@ -25,117 +21,13 @@ import {
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog"
 import { useAuthUser } from "../../lib/hooks/useAuthUser"
 import { httpRequest } from "../../services/httpClient"
-import { salesService, type FormaPago, type VentaDetailRecord, type VentaListRecord, type VentaPayload } from "../../services/salesService"
+import { salesService, type FormaPago, type VentaDetailRecord, type VentaListRecord } from "../../services/salesService"
 import { formatMoney, round2, toNumberSafe } from "../../utils/number"
-import { calcLineTotal, calcTotals } from "../../modules/ventas/utils/salesCalc"
 import { SalesDetailDrawer } from "./components/SalesDetailDrawer"
 import { SalesFiltersDrawer, type SalesFilters } from "./components/SalesFiltersDrawer"
 import { SalesListHeader } from "./components/SalesListHeader"
-
-type ClienteOption = {
-  id_cliente: number
-  nombres: string
-  apellidos: string
-  cedula: string
-}
-
-type ProductoOption = {
-  id_producto: number
-  nombre_producto: string
-  codigo_producto: string
-  precio_venta: number
-  cantidad_stock: number
-  stock_minimo: number
-}
-
-// Este shape valida cada línea del carrito antes de golpear al backend.
-const detalleSchema = z
-  .object({
-    id_producto: z.number().int("Selecciona un producto válido").positive("Selecciona un producto"),
-    cantidad: z.string(),
-    precio_unitario: z.string(),
-    descuento: z.string().optional().default("0"),
-  })
-  .superRefine((data, ctx) => {
-    const cantidad = toNumberSafe(data.cantidad)
-    const precio = toNumberSafe(data.precio_unitario)
-    const descuento = toNumberSafe(data.descuento)
-
-    if (!Number.isFinite(cantidad) || cantidad <= 0 || !Number.isInteger(cantidad)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["cantidad"], message: "Cantidad mínima 1" })
-    }
-    if (!Number.isFinite(precio) || precio < 0.01) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["precio_unitario"], message: "Precio mínimo 0.01" })
-    }
-    if (!Number.isFinite(descuento) || descuento < 0) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["descuento"], message: "Descuento inválido" })
-    }
-
-    const maxDiscount = Math.max(0, cantidad * precio)
-    if (descuento > maxDiscount) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["descuento"], message: "Descuento supera el total de la línea" })
-    }
-  })
-
-// Pequeño generador de planes que asegura fechas y número de cuotas razonables.
-const creditoSchema = z.object({
-  numero_cuotas: z.string(),
-  fecha_primer_vencimiento: z.string().min(1, "Selecciona la fecha inicial"),
-  dias_entre_cuotas: z.string(),
-})
-
-const creditoSchemaValidated = creditoSchema.superRefine((data, ctx) => {
-  const cuotas = toNumberSafe(data.numero_cuotas)
-  const dias = toNumberSafe(data.dias_entre_cuotas)
-  if (!Number.isInteger(cuotas) || cuotas < 1 || cuotas > 48) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["numero_cuotas"], message: "Mínimo 1 y máximo 48 cuotas" })
-  }
-  if (!Number.isInteger(dias) || dias < 1 || dias > 90) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["dias_entre_cuotas"], message: "Mínimo 1 y máximo 90 días" })
-  }
-})
-
-// Validación completa del formulario, incluido el candado cuando es venta a crédito.
-const ventaSchema = z
-  .object({
-    id_cliente: z.number().int("Cliente inválido").positive("Selecciona un cliente"),
-    observacion: z
-      .string()
-      .trim()
-      .max(255, "Máximo 255 caracteres")
-      .optional()
-      .or(z.literal("")),
-    forma_pago: z.enum(["CONTADO", "CREDITO"]),
-    detalle: z.array(detalleSchema).min(1, "Agrega al menos un producto"),
-    creditoConfig: creditoSchemaValidated.nullable().optional(),
-  })
-  .superRefine((data, ctx) => {
-    if (data.forma_pago === "CREDITO" && !data.creditoConfig) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["creditoConfig"],
-        message: "Configura las cuotas para ventas a crédito",
-      })
-    }
-  })
-
-type VentaFormValues = z.input<typeof ventaSchema>
-
-// Estado inicial del wizard para que todo arranque poblado y evitemos undefined.
-const defaultValues: VentaFormValues = {
-  id_cliente: 0,
-  observacion: "",
-  forma_pago: "CONTADO",
-  detalle: [
-    {
-      id_producto: 0,
-      cantidad: "1",
-      precio_unitario: "0",
-      descuento: "0",
-    },
-  ],
-  creditoConfig: null,
-}
+import { SaleCreateModal } from "./components/SaleCreateModal"
+import type { ClienteOption, ProductoOption } from "./types"
 
 // Todas las fechas de facturas se leen igual desde la tabla y el modal.
 const dateFormatter = new Intl.DateTimeFormat("es-EC", {
@@ -152,8 +44,6 @@ const formaPagoStyles: Record<FormaPago, string> = {
   CONTADO: "bg-slate-100 text-slate-700",
   CREDITO: "bg-purple-50 text-purple-700",
 }
-
-const IVA_RATE = 0.15 // 15 % IVA
 
 // Cada petición muestra el mensaje nativo del backend antes de caer en genérico.
 const getApiErrorMessage = (error: unknown, fallback: string) => {
@@ -185,7 +75,6 @@ export default function VentasPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [detailId, setDetailId] = useState<number | null>(null)
   const [editId, setEditId] = useState<number | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
   const [detailFormError, setDetailFormError] = useState<string | null>(null)
   const [editObservacionDraft, setEditObservacionDraft] = useState("")
 
@@ -206,17 +95,6 @@ export default function VentasPage() {
     return (PAGE_SIZE_OPTIONS as readonly number[]).includes(parsed) ? (parsed as PageSizeOption) : DEFAULT_PAGE_SIZE
   })
   const [page, setPage] = useState(1)
-
-  // React Hook Form gobierna todo el wizard y se apoya en zodResolver.
-  const form = useForm<VentaFormValues>({
-    resolver: zodResolver(ventaSchema),
-    defaultValues,
-  })
-
-  const detalleFieldArray = useFieldArray({ control: form.control, name: "detalle" })
-  const detalleValues = useWatch({ control: form.control, name: "detalle" })
-  const formaPagoWatch = useWatch({ control: form.control, name: "forma_pago" })
-  const clienteWatch = useWatch({ control: form.control, name: "id_cliente" })
 
   useEffect(() => {
     localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(pageSize))
@@ -325,54 +203,6 @@ export default function VentasPage() {
     }
   }, [ventaEditarQuery.data])
 
-  // Este helper limpia el formulario completo al cerrar el modal de creación.
-  const closeCreateDialog = () => {
-    form.reset(defaultValues)
-    setFormError(null)
-    setCreateDialogOpen(false)
-  }
-
-  // Convertimos los valores del formulario en la carga útil real para la API.
-  const buildPayload = (values: VentaFormValues): VentaPayload => {
-    const detalle = values.detalle.map((item) => ({
-      id_producto: item.id_producto,
-      cantidad: Math.trunc(toNumberSafe(item.cantidad)),
-      precio_unitario: round2(toNumberSafe(item.precio_unitario)),
-      descuento: round2(toNumberSafe(item.descuento ?? "0")),
-    }))
-
-    const payload: VentaPayload = {
-      id_cliente: values.id_cliente,
-      forma_pago: values.forma_pago,
-      observacion: values.observacion?.trim() ? values.observacion.trim() : null,
-      detalle,
-    }
-
-    if (values.forma_pago === "CREDITO" && values.creditoConfig) {
-      payload.creditoConfig = {
-        numero_cuotas: Math.trunc(toNumberSafe(values.creditoConfig.numero_cuotas)),
-        fecha_primer_vencimiento: values.creditoConfig.fecha_primer_vencimiento,
-        dias_entre_cuotas: Math.trunc(toNumberSafe(values.creditoConfig.dias_entre_cuotas)),
-      }
-    }
-
-    return payload
-  }
-
-  // POST /ventas para crear una factura completa con su crédito opcional.
-  const createMutation = useMutation({
-    mutationFn: (payload: VentaPayload) => salesService.createSale(payload),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["ventas"] })
-      toast.success("Venta registrada")
-      closeCreateDialog()
-    },
-    onError: (error: unknown) => {
-      setFormError(getApiErrorMessage(error, "No se pudo registrar la venta"))
-      toast.error("Error al guardar")
-    },
-  })
-
   // Permite editar sólo la observación sin reabrir la venta.
   const updateObservacionMutation = useMutation({
     mutationFn: ({ id, observacion }: { id: number; observacion: string | null }) =>
@@ -432,54 +262,6 @@ export default function VentasPage() {
   const clientes = useMemo(() => clientesQuery.data ?? [], [clientesQuery.data])
   const productos = useMemo(() => productosQuery.data ?? [], [productosQuery.data])
 
-  const productosMap = useMemo(() => {
-    const map = new Map<number, ProductoOption>()
-    productos.forEach((producto) => {
-      map.set(producto.id_producto, producto)
-    })
-    return map
-  }, [productos])
-
-  const onSubmit = form.handleSubmit((values) => {
-    setFormError(null)
-
-    // Validación de stock (en frontend) para evitar fallas y NaN.
-    let stockOk = true
-    values.detalle.forEach((line, index) => {
-      const producto = productosMap.get(line.id_producto)
-      if (!producto) return
-      const qty = Math.trunc(toNumberSafe(line.cantidad))
-      if (qty > producto.cantidad_stock) {
-        stockOk = false
-        form.setError(`detalle.${index}.cantidad` as const, {
-          type: "validate",
-          message: `Stock insuficiente (disp: ${producto.cantidad_stock})`,
-        })
-      }
-    })
-
-    if (!stockOk) {
-      toast.error("Revisa el stock disponible")
-      return
-    }
-
-    createMutation.mutate(buildPayload(values))
-  })
-
-
-  // Totales en vivo: recalculan subtotal, IVA y total según el detalle.
-  const totals = useMemo(() => {
-    const items = Array.isArray(detalleValues) ? detalleValues : []
-    return calcTotals(
-      items.map((item) => ({
-        price: item?.precio_unitario,
-        qty: item?.cantidad,
-        discount: item?.descuento,
-      })),
-      IVA_RATE
-    )
-  }, [detalleValues])
-
   // KPIs rápidos para pintar las tarjetas del dashboard.
   const totalFacturado = useMemo(() => round2(ventas.reduce((acc, venta) => acc + toNumberSafe(venta.total), 0)), [ventas])
 
@@ -496,48 +278,6 @@ export default function VentasPage() {
     () => round2(creditosPendientes.reduce((acc, credito) => acc + credito.saldo_pendiente, 0)),
     [creditosPendientes]
   )
-
-  const createBlockingReason = useMemo(() => {
-    if (clientesQuery.isLoading) return "Cargando clientes…"
-    if (productosQuery.isLoading) return "Cargando productos…"
-    if (!Number.isFinite(clienteWatch) || clienteWatch <= 0) return "Selecciona un cliente."
-
-    const items = Array.isArray(detalleValues) ? detalleValues : []
-    if (items.length === 0) return "Agrega al menos un producto."
-
-    for (let index = 0; index < items.length; index += 1) {
-      const line = items[index]
-      const prefix = `Línea ${index + 1}: `
-      const productId = toNumberSafe(line?.id_producto)
-      if (!productId) return prefix + "Selecciona un producto."
-
-      const product = productosMap.get(productId)
-      if (!product) return prefix + "Selecciona un producto válido."
-
-      const qty = Math.trunc(toNumberSafe(line?.cantidad))
-      if (!Number.isInteger(qty) || qty <= 0) return prefix + "Revisa la cantidad (mínimo 1)."
-
-      const unitPrice = toNumberSafe(line?.precio_unitario)
-      if (!Number.isFinite(unitPrice) || unitPrice < 0.01) {
-        return prefix + `Revisa el precio unitario de "${product.nombre_producto}" (mínimo 0.01).`
-      }
-
-      const discount = toNumberSafe(line?.descuento)
-      if (!Number.isFinite(discount) || discount < 0) {
-        return prefix + `Revisa el descuento de "${product.nombre_producto}" (no puede ser negativo).`
-      }
-      if (discount > qty * unitPrice) {
-        return prefix + `El descuento de "${product.nombre_producto}" supera el total de la línea.`
-      }
-
-      if (product.cantidad_stock <= 0) return prefix + `El producto "${product.nombre_producto}" no tiene stock.`
-      if (qty > product.cantidad_stock) return prefix + `Stock insuficiente para "${product.nombre_producto}" (disp: ${product.cantidad_stock}).`
-    }
-
-    return null
-  }, [clientesQuery.isLoading, productosQuery.isLoading, clienteWatch, detalleValues, productosMap])
-
-  const canSubmitCreate = !createMutation.isPending && createBlockingReason === null
 
   const filteredVentas = useMemo(() => {
     const needle = searchInput.trim().toLowerCase()
@@ -575,44 +315,6 @@ export default function VentasPage() {
 
   const startItem = filteredVentas.length === 0 ? 0 : (currentPage - 1) * pageSize + 1
   const endItem = filteredVentas.length === 0 ? 0 : Math.min(filteredVentas.length, (currentPage - 1) * pageSize + pagedVentas.length)
-
-  // Cuando seleccionas un producto rellenamos precio y controlamos stock.
-  const handleProductSelection = (index: number, productId: number) => {
-    if (!productId) return
-    const producto = productosMap.get(productId)
-    if (producto) {
-      form.setValue(`detalle.${index}.precio_unitario`, String(round2(producto.precio_venta ?? 0)), {
-        shouldDirty: true,
-        shouldValidate: true,
-      })
-      const cantidadActual = form.getValues(`detalle.${index}.cantidad`)
-      if (toNumberSafe(cantidadActual) <= 0) {
-        form.setValue(`detalle.${index}.cantidad`, "1", {
-          shouldDirty: true,
-          shouldValidate: true,
-        })
-      }
-    }
-  }
-
-  const formaPagoField = form.register("forma_pago")
-
-  const handleFormaPagoChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    formaPagoField.onChange(event)
-    if (event.target.value === "CONTADO") {
-      form.setValue("creditoConfig", null)
-    } else {
-      const current = form.getValues("creditoConfig")
-      if (!current) {
-        const today = new Date().toISOString().split("T")[0]
-        form.setValue("creditoConfig", {
-          numero_cuotas: "2",
-          fecha_primer_vencimiento: today,
-          dias_entre_cuotas: "30",
-        })
-      }
-    }
-  }
 
   const handleCancelVenta = () => {
     if (!ventaDetalleQuery.data || cancelVentaMutation.isPending) return
@@ -656,7 +358,7 @@ export default function VentasPage() {
     <div className="space-y-6">
       <section
         aria-labelledby="ventas-encabezado"
-        className="rounded-3xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 p-6 shadow-sm"
+        className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"
       >
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -672,7 +374,7 @@ export default function VentasPage() {
             <button
               type="button"
               onClick={() => setCreateDialogOpen(true)}
-              disabled={createMutation.isPending || !isAdmin}
+              disabled={!isAdmin}
               className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               aria-label="Nueva venta"
             >
@@ -690,11 +392,11 @@ export default function VentasPage() {
           <p className="text-sm text-slate-500">Cabeceras totales en el sistema</p>
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase text-slate-500">Total facturado</p>
-          <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-emerald-700">
-            <BadgeDollarSign className="h-6 w-6 text-emerald-500" />
-            {formatMoney(totalFacturado)}
+          <div className="flex items-center justify-between">
+            <p className="text-xs uppercase text-slate-500">Total facturado</p>
+            <BadgeDollarSign className="h-5 w-5 text-emerald-500" />
           </div>
+          <p className="mt-2 text-3xl font-semibold text-emerald-700">{formatMoney(totalFacturado)}</p>
           <p className="text-sm text-slate-500">Incluye IVA</p>
         </article>
         <article className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -983,311 +685,15 @@ export default function VentasPage() {
           onClearDraft={() => setFiltersDraft({ estado: "all", formaPago: "all", fechaDesde: "", fechaHasta: "" })}
         />
 
-      <Dialog
+      <SaleCreateModal
         open={createDialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeCreateDialog()
-          } else {
-            setCreateDialogOpen(true)
-          }
-        }}
-      >
-        <DialogContent className="w-full max-w-5xl overflow-hidden p-0">
-          <DialogHeader className="border-b border-slate-200 px-6 py-4">
-            <DialogTitle>Registrar venta</DialogTitle>
-            <DialogDescription>Observa stock, totales y cuotas sin salir de esta pantalla.</DialogDescription>
-          </DialogHeader>
-          {formError && (
-            <div className="mx-6 mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</div>
-          )}
-          <form onSubmit={onSubmit} className="grid max-h-[80vh] grid-cols-1 overflow-hidden lg:grid-cols-[3fr,2fr]">
-            <section className="space-y-6 overflow-y-auto px-6 py-5">
-              <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <label className="text-xs font-medium uppercase text-slate-500">Cliente</label>
-                  <select
-                    {...form.register("id_cliente", { valueAsNumber: true })}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    disabled={clientesQuery.isLoading}
-                  >
-                    <option value={0}>Selecciona un cliente</option>
-                    {clientes.map((cliente) => (
-                      <option key={cliente.id_cliente} value={cliente.id_cliente}>
-                        {cliente.nombres} {cliente.apellidos} · {cliente.cedula}
-                      </option>
-                    ))}
-                  </select>
-                  {form.formState.errors.id_cliente && (
-                    <p className="mt-1 text-xs text-red-600">{form.formState.errors.id_cliente.message}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="text-xs font-medium uppercase text-slate-500">Forma de pago</label>
-                  <select
-                    {...formaPagoField}
-                    onChange={handleFormaPagoChange}
-                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  >
-                    <option value="CONTADO">Contado</option>
-                    <option value="CREDITO">Crédito</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-medium uppercase text-slate-500">Observaciones</label>
-                <textarea
-                  rows={3}
-                  {...form.register("observacion")}
-                  placeholder="Ej. Ajustar entrega con el cliente"
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-                {form.formState.errors.observacion && (
-                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.observacion.message}</p>
-                )}
-              </div>
-
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-medium uppercase text-slate-500">Detalle de productos</label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    detalleFieldArray.append({ id_producto: 0, cantidad: "1", precio_unitario: "0", descuento: "0" })
-                  }
-                  className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-semibold text-slate-600 hover:border-slate-300"
-                >
-                  <PackagePlus className="h-3.5 w-3.5" /> Añadir línea
-                </button>
-              </div>
-
-              <div className="mt-3 space-y-3">
-                {detalleFieldArray.fields.map((field, index) => {
-                  const productoField = form.register(`detalle.${index}.id_producto` as const, { valueAsNumber: true })
-                  const cantidadField = form.register(`detalle.${index}.cantidad` as const)
-                  const precioField = form.register(`detalle.${index}.precio_unitario` as const)
-                  const descuentoField = form.register(`detalle.${index}.descuento` as const)
-                  const currentLine = detalleValues?.[index]
-                  const currentProduct = productosMap.get(currentLine?.id_producto ?? 0)
-                  const lineTotal = calcLineTotal(currentLine?.precio_unitario, currentLine?.cantidad, currentLine?.descuento)
-                  const qtyNumber = Math.trunc(toNumberSafe(currentLine?.cantidad))
-                  const stockDisponible = currentProduct?.cantidad_stock ?? null
-                  const stockMinimo = currentProduct?.stock_minimo ?? 0
-                  const productoSeleccionado = Boolean(currentProduct)
-                  const outOfStock = stockDisponible !== null && stockDisponible <= 0
-                  const lowStock = stockDisponible !== null && stockMinimo > 0 && stockDisponible <= stockMinimo && stockDisponible > 0
-                  const stockExceeded = stockDisponible !== null && qtyNumber > stockDisponible
-
-                  return (
-                    <div key={field.id} className="space-y-3 rounded-2xl border border-slate-200 p-3">
-                      <div className="grid gap-3 md:grid-cols-[2fr,1fr]">
-                        <div>
-                          <label className="text-[11px] font-medium uppercase text-slate-500">Producto</label>
-                          <select
-                            {...productoField}
-                            onChange={(event) => {
-                              productoField.onChange(event)
-                              handleProductSelection(index, Number(event.target.value))
-                            }}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            disabled={productosQuery.isLoading}
-                          >
-                            <option value={0}>Selecciona un producto</option>
-                            {productos.map((producto) => (
-                              <option key={producto.id_producto} value={producto.id_producto}>
-                                {producto.nombre_producto} · {producto.codigo_producto}
-                              </option>
-                            ))}
-                          </select>
-                          {form.formState.errors.detalle?.[index]?.id_producto && (
-                            <p className="mt-1 text-xs text-red-600">
-                              {form.formState.errors.detalle[index]?.id_producto?.message}
-                            </p>
-                          )}
-                          {!form.formState.errors.detalle?.[index]?.id_producto && !productoSeleccionado && (
-                            <p className="mt-1 text-xs text-slate-500">Selecciona un producto para habilitar precio y cantidad.</p>
-                          )}
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-medium uppercase text-slate-500">Precio unitario</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            {...precioField}
-                            value={String(currentLine?.precio_unitario ?? "")}
-                            onChange={(event) => {
-                              precioField.onChange(event)
-                            }}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            disabled={!productoSeleccionado}
-                          />
-                          {form.formState.errors.detalle?.[index]?.precio_unitario && (
-                            <p className="mt-1 text-xs text-red-600">
-                              {form.formState.errors.detalle[index]?.precio_unitario?.message}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="grid gap-3 md:grid-cols-3">
-                        <div>
-                          <label className="text-[11px] font-medium uppercase text-slate-500">Cantidad</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            {...cantidadField}
-                            value={String(currentLine?.cantidad ?? "")}
-                            onChange={(event) => {
-                              cantidadField.onChange(event)
-                            }}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            disabled={!productoSeleccionado}
-                          />
-                          {form.formState.errors.detalle?.[index]?.cantidad && (
-                            <p className="mt-1 text-xs text-red-600">
-                              {form.formState.errors.detalle[index]?.cantidad?.message}
-                            </p>
-                          )}
-                          {!form.formState.errors.detalle?.[index]?.cantidad && outOfStock && (
-                            <p className="mt-1 text-xs text-red-600">Producto sin stock</p>
-                          )}
-                          {!form.formState.errors.detalle?.[index]?.cantidad && !outOfStock && stockExceeded && (
-                            <p className="mt-1 text-xs text-red-600">Stock insuficiente (disp: {stockDisponible})</p>
-                          )}
-                          {!form.formState.errors.detalle?.[index]?.cantidad && !stockExceeded && !outOfStock && lowStock && (
-                            <p className="mt-1 text-xs text-red-600">Stock bajo (disp: {stockDisponible} · mín: {stockMinimo})</p>
-                          )}
-                        </div>
-                        <div>
-                          <label className="text-[11px] font-medium uppercase text-slate-500">Descuento</label>
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            {...descuentoField}
-                            value={String(currentLine?.descuento ?? "")}
-                            onChange={(event) => {
-                              descuentoField.onChange(event)
-                            }}
-                            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            disabled={!productoSeleccionado}
-                          />
-                          {form.formState.errors.detalle?.[index]?.descuento && (
-                            <p className="mt-1 text-xs text-red-600">
-                              {form.formState.errors.detalle[index]?.descuento?.message}
-                            </p>
-                          )}
-                        </div>
-                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm">
-                          <p className="text-xs text-slate-500">Total línea</p>
-                          <p className="text-lg font-semibold text-slate-900">{formatMoney(lineTotal)}</p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                        <p>
-                          Stock: {currentProduct ? `${currentProduct.cantidad_stock} / mín: ${currentProduct.stock_minimo}` : "—"}
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => detalleFieldArray.remove(index)}
-                          disabled={detalleFieldArray.fields.length === 1}
-                          className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 hover:border-slate-300 disabled:opacity-50"
-                        >
-                          Quitar
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {form.formState.errors.detalle?.message && (
-                <p className="text-xs text-red-600">{form.formState.errors.detalle.message}</p>
-              )}
-            </section>
-
-            <aside className="flex flex-col border-t border-slate-200 bg-slate-50 px-6 py-5 text-sm text-slate-700 lg:border-l lg:border-t-0">
-              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                <div className="flex items-center justify-between">
-                  <span>Subtotal</span>
-                  <span>{formatMoney(totals.subtotal)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>IVA (15 %)</span>
-                  <span>{formatMoney(totals.impuesto)}</span>
-                </div>
-                <div className="mt-2 flex items-center justify-between text-base font-semibold text-slate-900">
-                  <span>Total</span>
-                  <span>{formatMoney(totals.total)}</span>
-                </div>
-              </div>
-
-              {formaPagoWatch === "CREDITO" && (
-                <div className="mt-4 space-y-3 rounded-2xl border border-purple-200 bg-purple-50 p-4 text-slate-700">
-                  <p className="text-sm font-semibold text-slate-900">Configuración de crédito</p>
-                  <div>
-                    <label className="text-[11px] font-medium uppercase text-slate-600">Número de cuotas</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      {...form.register("creditoConfig.numero_cuotas" as const)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-medium uppercase text-slate-600">Fecha primer vencimiento</label>
-                    <input
-                      type="date"
-                      {...form.register("creditoConfig.fecha_primer_vencimiento" as const)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-[11px] font-medium uppercase text-slate-600">Días entre cuotas</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      {...form.register("creditoConfig.dias_entre_cuotas" as const)}
-                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
-                    />
-                  </div>
-                  {form.formState.errors.creditoConfig && (
-                    <p className="text-xs text-red-600">{form.formState.errors.creditoConfig.message ?? "Completa los campos del crédito"}</p>
-                  )}
-                </div>
-              )}
-
-              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-4 text-xs text-slate-500">
-                <p className="flex items-center gap-2">
-                  <CalendarClock className="h-4 w-4 text-slate-400" />
-                  Totales calculados automáticamente con IVA al 15 %.
-                </p>
-              </div>
-
-              <div className="mt-auto flex flex-col gap-2 pt-4">
-                {createBlockingReason && (
-                  <p className="rounded-lg border border-red-200 bg-red-50 p-2 text-xs text-red-700">{createBlockingReason}</p>
-                )}
-                <button
-                  type="submit"
-                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                  disabled={!canSubmitCreate}
-                >
-                  {createMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-                  Registrar venta
-                </button>
-                <button
-                  type="button"
-                  onClick={closeCreateDialog}
-                  className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </aside>
-          </form>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={setCreateDialogOpen}
+        clientes={clientes}
+        productos={productos}
+        clientesLoading={clientesQuery.isLoading}
+        productosLoading={productosQuery.isLoading}
+        isAdmin={isAdmin}
+      />
 
       <SalesDetailDrawer
         open={detailId !== null}
