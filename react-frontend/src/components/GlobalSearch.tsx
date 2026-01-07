@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowUpRight, Loader2, Package, Search, UserRound, Wallet } from "lucide-react"
 
 import { api } from "../lib/apiClient"
 import { appNavItems, type NavItem } from "../lib/navigation"
 import { cn } from "../lib/utils"
+import { useDebouncedValue } from "../lib/hooks/useDebouncedValue"
 
 const searchPlaceholder = "Busca productos, clientes o facturas (Ctrl + K)"
 const priceFormatter = new Intl.NumberFormat("es-EC", { style: "currency", currency: "USD" })
@@ -62,17 +63,10 @@ const emptyResults: SearchResponse = {
   facturas: [],
 }
 
-const useDebouncedValue = (value: string, delay = 250) => {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const handler = window.setTimeout(() => setDebounced(value), delay)
-    return () => window.clearTimeout(handler)
-  }, [value, delay])
-  return debounced
-}
-
 export const GlobalSearch = () => {
   const navigate = useNavigate()
+  const location = useLocation()
+  const isDashboardRoute = location.pathname === "/dashboard"
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [previewProduct, setPreviewProduct] = useState<ProductoSearchRecord | null>(null)
@@ -103,9 +97,14 @@ export const GlobalSearch = () => {
     setOpen(false)
   }
 
-  const handleNavigate = (path: string) => {
-    navigate(path)
+  const handleNavigate = (path: string, options?: { state?: unknown }) => {
+    navigate(path, options)
     closePalette()
+  }
+
+  const handleOpenProduct = (productId?: number) => {
+    if (!productId) return
+    handleNavigate("/productos", { state: { focusProductId: productId } })
   }
 
   useEffect(() => {
@@ -119,18 +118,28 @@ export const GlobalSearch = () => {
   }, [open])
 
   useEffect(() => {
+    if (!isDashboardRoute) return
+
     const handleShortcut = (event: KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault()
         setOpen(true)
+        return
       }
       if (event.key === "Escape") {
         setOpen(false)
       }
     }
+
     window.addEventListener("keydown", handleShortcut)
     return () => window.removeEventListener("keydown", handleShortcut)
-  }, [])
+  }, [isDashboardRoute])
+
+  useEffect(() => {
+    if (!isDashboardRoute && open) {
+      setOpen(false)
+    }
+  }, [isDashboardRoute, open])
 
   useEffect(() => {
     if (!open) {
@@ -167,19 +176,21 @@ export const GlobalSearch = () => {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
-      >
-        <Search className="h-4 w-4" />
-        <span className="hidden sm:inline">Buscar</span>
-        <span className="text-xs uppercase text-slate-400">Ctrl + K</span>
-      </button>
+      {isDashboardRoute && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-900"
+        >
+          <Search className="h-4 w-4" />
+          <span className="hidden sm:inline">Buscar</span>
+          <span className="text-xs uppercase text-slate-400">Ctrl + K</span>
+        </button>
+      )}
 
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 px-4 py-10 backdrop-blur-sm">
-          <div className="w-full max-w-4xl rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+      {isDashboardRoute && open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-4 backdrop-blur-sm sm:py-6">
+          <div className="flex h-[85vh] w-[min(1100px,92vw)] max-h-[85vh] flex-col overflow-hidden rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
             <div className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-2">
               <Search className="h-4 w-4 text-slate-400" />
               <input
@@ -198,29 +209,33 @@ export const GlobalSearch = () => {
               </button>
             </div>
 
-            <div className="mt-5 grid gap-6 lg:grid-cols-[2fr,1fr]">
-              <div>
-                {navResults.length > 0 && (
-                  <section>
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Atajos</p>
-                    <ul className="mt-2 grid gap-2 sm:grid-cols-2">
-                      {navResults.map((item: NavItem) => (
-                        <li key={item.to}>
-                          <button
-                            className="flex w-full items-center justify-between rounded-2xl border border-slate-100 px-4 py-3 text-left text-sm text-slate-700 transition hover:border-slate-200 hover:bg-slate-50"
-                            onClick={() => handleNavigate(item.to)}
-                          >
-                            <div className="flex items-center gap-3">
-                              <item.icon className="h-4 w-4 text-slate-400" />
-                              <span>{item.label}</span>
-                            </div>
-                            <ArrowUpRight className="h-4 w-4 text-slate-400" />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </section>
-                )}
+            <div className="mt-5 flex-1 min-h-0 overflow-hidden">
+              <div className="grid h-full min-h-0 grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-6">
+                {/* Panel izquierdo: atajos + resultados (scrollea) */}
+                <div className="min-w-0 min-h-0 overflow-y-auto overflow-x-hidden pr-1">
+                  {navResults.length > 0 && (
+                    <section>
+                      <div className="sticky top-0 z-10 bg-white pb-2">
+                        <p className="text-xs uppercase tracking-wide text-slate-400">Atajos</p>
+                      </div>
+                      <ul className="grid gap-2 sm:grid-cols-2">
+                        {navResults.map((item: NavItem) => (
+                          <li key={item.to}>
+                            <button
+                              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-slate-100 px-4 py-3 text-left text-sm text-slate-700 transition hover:border-slate-200 hover:bg-slate-50"
+                              onClick={() => handleNavigate(item.to)}
+                            >
+                              <div className="flex min-w-0 items-center gap-3">
+                                <item.icon className="h-4 w-4 text-slate-400" />
+                                <span className="truncate">{item.label}</span>
+                              </div>
+                              <ArrowUpRight className="h-4 w-4 shrink-0 text-slate-400" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </section>
+                  )}
 
                 {needsMoreChars && (
                   <p className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3 text-sm text-slate-500">
@@ -249,14 +264,14 @@ export const GlobalSearch = () => {
 
                 {productResults.length > 0 && (
                   <section className="mt-5">
-                    <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                    <div className="sticky top-0 z-10 flex items-center justify-between bg-white pb-2 text-xs uppercase tracking-wide text-slate-400">
                       <span>Productos ({productResults.length})</span>
                       <button
                         type="button"
                         className="text-[11px] font-semibold text-slate-500 hover:text-slate-900"
-                        onClick={() => handleNavigate("/productos")}
+                        onClick={() => handleOpenProduct(previewProduct?.id_producto ?? productResults[0]?.id_producto)}
                       >
-                        Abrir módulo
+                        Ir al producto
                       </button>
                     </div>
                     <ul className="mt-2 space-y-2">
@@ -268,17 +283,19 @@ export const GlobalSearch = () => {
                               type="button"
                               onClick={() => setPreviewProduct(producto)}
                               className={cn(
-                                "flex w-full items-center justify-between rounded-2xl border px-4 py-3 text-left text-sm transition",
+                                "flex w-full items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-left text-sm transition",
                                 isActive
                                   ? "border-slate-900 bg-slate-900/5 text-slate-900"
                                   : "border-slate-100 text-slate-700 hover:border-slate-200 hover:bg-slate-50"
                               )}
                             >
-                              <div>
-                                <p className="font-semibold">{producto.nombre_producto}</p>
+                              <div className="min-w-0">
+                                <p className="overflow-hidden text-ellipsis font-semibold text-slate-900 [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+                                  {producto.nombre_producto}
+                                </p>
                                 <p className="text-xs text-slate-500">SKU {producto.codigo_producto}</p>
                               </div>
-                              <div className="flex items-center gap-3 text-xs text-slate-500">
+                              <div className="flex shrink-0 items-center gap-3 text-xs text-slate-500">
                                 <span>{producto.cantidad_stock} uds</span>
                                 <span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-semibold">
                                   {compactPriceFormatter.format(producto.precio_venta)}
@@ -294,7 +311,7 @@ export const GlobalSearch = () => {
 
                 {clientResults.length > 0 && (
                   <section className="mt-5">
-                    <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                    <div className="sticky top-0 z-10 flex items-center justify-between bg-white pb-2 text-xs uppercase tracking-wide text-slate-400">
                       <span>Clientes ({clientResults.length})</span>
                       <button
                         type="button"
@@ -307,7 +324,7 @@ export const GlobalSearch = () => {
                     <ul className="mt-2 grid gap-2 sm:grid-cols-2">
                       {clientResults.map((cliente) => (
                         <li key={cliente.id_cliente} className="rounded-2xl border border-slate-100 bg-white px-4 py-3 text-sm">
-                          <p className="font-semibold text-slate-900">
+                          <p className="overflow-hidden text-ellipsis font-semibold text-slate-900 [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
                             {cliente.nombres} {cliente.apellidos}
                           </p>
                           <p className="text-xs text-slate-500">Cédula {cliente.cedula}</p>
@@ -320,7 +337,7 @@ export const GlobalSearch = () => {
 
                 {invoiceResults.length > 0 && (
                   <section className="mt-5">
-                    <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-400">
+                    <div className="sticky top-0 z-10 flex items-center justify-between bg-white pb-2 text-xs uppercase tracking-wide text-slate-400">
                       <span>Facturas ({invoiceResults.length})</span>
                       <button
                         type="button"
@@ -334,13 +351,13 @@ export const GlobalSearch = () => {
                       {invoiceResults.map((factura) => (
                         <li key={factura.id_factura} className="rounded-2xl border border-slate-100 bg-white px-4 py-3 text-sm">
                           <div className="flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-slate-900">Factura {factura.numero_factura}</p>
-                              <p className="text-xs text-slate-500">
+                            <div className="min-w-0">
+                              <p className="truncate font-semibold text-slate-900">Factura {factura.numero_factura}</p>
+                              <p className="overflow-hidden text-ellipsis text-xs text-slate-500 [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
                                 {factura.cliente.nombres} {factura.cliente.apellidos}
                               </p>
                             </div>
-                            <span className="text-sm font-semibold text-slate-900">{priceFormatter.format(factura.total)}</span>
+                            <span className="shrink-0 text-sm font-semibold text-slate-900">{priceFormatter.format(factura.total)}</span>
                           </div>
                           <p className="text-xs text-slate-500">
                             {dateFormatter.format(new Date(factura.fecha_factura))} · {factura.forma_pago}
@@ -350,53 +367,61 @@ export const GlobalSearch = () => {
                     </ul>
                   </section>
                 )}
-              </div>
 
-              <aside className="hidden rounded-2xl border border-slate-100 bg-slate-50 p-4 lg:block">
-                {previewProduct ? (
-                  <div className="space-y-4 text-sm text-slate-600">
-                    <div>
-                      <p className="text-xs uppercase text-slate-400">Producto</p>
-                      <p className="text-lg font-semibold text-slate-900">{previewProduct.nombre_producto}</p>
-                      <p className="text-xs text-slate-500">Código {previewProduct.codigo_producto}</p>
-                    </div>
-                    <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
-                      <div>
-                        <p className="text-xs uppercase text-slate-400">Precio</p>
-                        <p className="text-base font-semibold text-slate-900">{priceFormatter.format(previewProduct.precio_venta)}</p>
-                      </div>
-                      <div>
-                        <p className="text-xs uppercase text-slate-400">Stock</p>
-                        <p className="text-base font-semibold text-slate-900">{previewProduct.cantidad_stock} uds</p>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm"
-                      onClick={() => handleNavigate("/productos")}
-                    >
-                      <Package className="h-4 w-4" />
-                      Abrir módulo de productos
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex h-full flex-col items-center justify-center space-y-3 text-center text-sm text-slate-500">
-                    <UserRound className="h-8 w-8 text-slate-400" />
-                    <p>Empieza a escribir para ver sugerencias de inventario, clientes o facturas.</p>
-                  </div>
-                )}
-                <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
-                  <p className="flex items-center gap-2 font-semibold text-slate-900">
-                    <Wallet className="h-4 w-4 text-slate-400" />
-                    Tips de búsqueda
-                  </p>
-                  <ul className="mt-2 space-y-1">
-                    <li>• Escribe parte del código de producto o SKU.</li>
-                    <li>• Busca clientes por nombre, apellido o cédula.</li>
-                    <li>• Ingresa el número de factura para ubicarla rápido.</li>
-                  </ul>
                 </div>
-              </aside>
+
+                {/* Panel derecho: ayuda/detalle (scrollea si no alcanza) */}
+                <aside className="min-w-0 min-h-0 overflow-y-auto overflow-x-hidden rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  {previewProduct ? (
+                    <div className="space-y-4 text-sm text-slate-600">
+                      <div>
+                        <p className="text-xs uppercase text-slate-400">Producto</p>
+                        <p className="overflow-hidden text-ellipsis text-lg font-semibold text-slate-900 [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical]">
+                          {previewProduct.nombre_producto}
+                        </p>
+                        <p className="text-xs text-slate-500">Código {previewProduct.codigo_producto}</p>
+                      </div>
+                      <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2">
+                        <div>
+                          <p className="text-xs uppercase text-slate-400">Precio</p>
+                          <p className="text-base font-semibold text-slate-900">
+                            {priceFormatter.format(previewProduct.precio_venta)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase text-slate-400">Stock</p>
+                          <p className="text-base font-semibold text-slate-900">{previewProduct.cantidad_stock} uds</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm"
+                        onClick={() => handleOpenProduct(previewProduct.id_producto)}
+                      >
+                        <Package className="h-4 w-4" />
+                        Ir al producto
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center space-y-3 text-center text-sm text-slate-500">
+                      <UserRound className="h-8 w-8 text-slate-400" />
+                      <p>Empieza a escribir para ver sugerencias de inventario, clientes o facturas.</p>
+                    </div>
+                  )}
+
+                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500">
+                    <p className="flex items-center gap-2 font-semibold text-slate-900">
+                      <Wallet className="h-4 w-4 text-slate-400" />
+                      Tips de búsqueda
+                    </p>
+                    <ul className="mt-2 space-y-1">
+                      <li>• Escribe parte del código de producto o SKU.</li>
+                      <li>• Busca clientes por nombre, apellido o cédula.</li>
+                      <li>• Ingresa el número de factura para ubicarla rápido.</li>
+                    </ul>
+                  </div>
+                </aside>
+              </div>
             </div>
           </div>
         </div>
@@ -404,4 +429,3 @@ export const GlobalSearch = () => {
     </>
   )
 }
-

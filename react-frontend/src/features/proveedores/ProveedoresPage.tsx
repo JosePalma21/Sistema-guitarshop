@@ -1,486 +1,956 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { isAxiosError } from "axios"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  AlertCircle,
-  Building2,
-  CalendarClock,
-  Edit2,
-  Loader2,
-  Mail,
-  Phone,
-  Plus,
-  ShieldAlert,
-  Trash2,
+	AlertCircle,
+	Building2,
+	Edit2,
+	Loader2,
+	Mail,
+	MapPin,
+	Phone,
+	Trash2,
 } from "lucide-react"
 
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "../../components/ui/dialog"
 import { api } from "../../lib/apiClient"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "../../components/ui/dialog"
-import { useAuthUser } from "../../lib/hooks/useAuthUser"
+import { useDebouncedValue } from "../../lib/hooks/useDebouncedValue"
+import { detectEcuadorIdType, formatEcuadorIdTypeLabel, validateEcuadorId } from "./ecuadorId"
 
-type ProveedorRecord = {
-  id_proveedor: number
-  nombre_proveedor: string
-  ruc_cedula: string
-  correo: string | null
-  telefono: string | null
-  direccion: string | null
-  fecha_registro: string
+import type { ProveedoresFilters, ProveedoresViewMode } from "./proveedor.types"
+import type { ProveedorPayload, ProveedorRecord } from "./proveedor.types"
+import { proveedorClient } from "./proveedor.client"
+import { matchesProveedorSearch } from "./proveedor.utils"
+import { proveedoresQueryKey, useProveedoresQuery } from "./useProveedoresQuery"
+import { exportToCSV, exportToXLSX, exportToPDF, type ExportRow } from "./exportProveedores"
+
+import { ProveedoresFiltersDrawer } from "./components/ProveedoresFiltersDrawer"
+import { ProveedoresListHeader } from "./components/ProveedoresListHeader"
+import { ProveedoresDetailDrawer } from "./components/ProveedoresDetailDrawer"
+
+type ApiErrorResponse = {
+	error?: string
+	message?: string
 }
 
-// Validación completa del proveedor, igual a la que aplica Prisma.
+const PAGE_SIZE_STORAGE_KEY = "proveedores.pageSize"
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const
+type PageSizeOption = (typeof PAGE_SIZE_OPTIONS)[number]
+const DEFAULT_PAGE_SIZE: PageSizeOption = 25
+
 const proveedorSchema = z.object({
-  nombre_proveedor: z.string().trim().min(3, "El nombre es obligatorio").max(100, "Máximo 100 caracteres"),
-  ruc_cedula: z
-    .string()
-    .trim()
-    .regex(/^\d{10,13}$/, "Debe tener entre 10 y 13 dígitos"),
-  correo: z
-    .string()
-    .trim()
-    .max(120, "Máximo 120 caracteres")
-    .email("Correo no válido")
-    .optional()
-    .or(z.literal("")),
-  telefono: z
-    .string()
-    .trim()
-    .regex(/^[0-9+\-\s]{7,20}$/i, "Teléfono no válido")
-    .optional()
-    .or(z.literal("")),
-  direccion: z
-    .string()
-    .trim()
-    .max(150, "Máximo 150 caracteres")
-    .optional()
-    .or(z.literal("")),
+	nombre_proveedor: z.string().trim().min(3, "El nombre es obligatorio").max(100, "Máximo 100 caracteres"),
+	ruc_cedula: z.string().trim(),
+	correo: z
+		.string()
+		.trim()
+		.max(120, "Máximo 120 caracteres")
+		.email("Correo no válido")
+		.optional()
+		.or(z.literal("")),
+	telefono: z
+		.string()
+		.trim()
+		.regex(/^[0-9+\-\s]{7,20}$/i, "Teléfono no válido")
+		.optional()
+		.or(z.literal("")),
+	direccion: z
+		.string()
+		.trim()
+		.max(150, "Máximo 150 caracteres")
+		.optional()
+		.or(z.literal("")),
+}).superRefine((data, ctx) => {
+	const validation = validateEcuadorId(data.ruc_cedula)
+	if (!validation.isValid) {
+		ctx.addIssue({
+			code: z.ZodIssueCode.custom,
+			message: validation.error || "RUC/Cédula inválido",
+			path: ["ruc_cedula"],
+		})
+	}
 })
 
 type ProveedorFormValues = z.infer<typeof proveedorSchema>
 
-type ProveedorPayload = {
-  nombre_proveedor: string
-  ruc_cedula: string
-  correo: string | null
-  telefono: string | null
-  direccion: string | null
-}
+const dateFormatter = new Intl.DateTimeFormat("es-EC", {
+	dateStyle: "medium",
+})
 
-type ApiErrorResponse = {
-  error?: string
-  message?: string
-}
-
-// Set inicial para abrir/cerrar el modal sin dejar residuos.
 const defaultValues: ProveedorFormValues = {
-  nombre_proveedor: "",
-  ruc_cedula: "",
-  correo: "",
-  telefono: "",
-  direccion: "",
+	nombre_proveedor: "",
+	ruc_cedula: "",
+	correo: "",
+	telefono: "",
+	direccion: "",
 }
 
-// Las tarjetas laterales usan este formato humano.
-const dateFormatter = new Intl.DateTimeFormat("es-EC", { dateStyle: "medium" })
+const defaultFilters: ProveedoresFilters = {
+	orden: "name_asc",
+}
 
-// Reutilizamos el mismo parser de errores en los mutate.
 const getApiErrorMessage = (error: unknown, fallback: string) => {
-  if (isAxiosError<ApiErrorResponse>(error)) {
-    return error.response?.data?.error ?? error.response?.data?.message ?? fallback
-  }
-  if (error instanceof Error) {
-    return error.message
-  }
-  return fallback
+	if (isAxiosError<ApiErrorResponse>(error)) {
+		return error.response?.data?.error ?? error.response?.data?.message ?? fallback
+	}
+	return fallback
 }
 
 export default function ProveedoresPage() {
-  const { isAdmin } = useAuthUser()
-  const queryClient = useQueryClient()
-  const [dialogOpen, setDialogOpen] = useState(false)
-  const [editingProvider, setEditingProvider] = useState<ProveedorRecord | null>(null)
-  const [formError, setFormError] = useState<string | null>(null)
+	const queryClient = useQueryClient()
 
-  // React Hook Form lleva todo el estado y se apoya en el schema anterior.
-  const form = useForm<ProveedorFormValues>({
-    resolver: zodResolver(proveedorSchema),
-    defaultValues,
-  })
+	const [pageSize, setPageSize] = useState<PageSizeOption>(() => {
+		const stored = localStorage.getItem(PAGE_SIZE_STORAGE_KEY)
+		if (stored) {
+			const parsed = Number(stored) as PageSizeOption
+			if (PAGE_SIZE_OPTIONS.includes(parsed)) return parsed
+		}
+		return DEFAULT_PAGE_SIZE
+	})
 
-  // Trae todos los proveedores para mostrarlos en la tabla central.
-  const proveedoresQuery = useQuery<ProveedorRecord[]>({
-    queryKey: ["proveedores"],
-    enabled: isAdmin,
-    queryFn: async () => {
-      const { data } = await api.get<ProveedorRecord[]>("/proveedor")
-      return Array.isArray(data) ? data : []
-    },
-  })
+	const [currentPage, setCurrentPage] = useState(1)
+	const [searchInput, setSearchInput] = useState("")
+	const [filters, setFilters] = useState<ProveedoresFilters>(defaultFilters)
+	const [viewMode, setViewMode] = useState<ProveedoresViewMode>("table")
 
-  // Helper único para cerrar el modal y limpiar errores.
-  const closeDialog = () => {
-    setDialogOpen(false)
-    setEditingProvider(null)
-    setFormError(null)
-    form.reset(defaultValues)
-  }
+	const [filtersDrawerOpen, setFiltersDrawerOpen] = useState(false)
+	const [createDialogOpen, setCreateDialogOpen] = useState(false)
+	const [editDialogOpen, setEditDialogOpen] = useState(false)
+	const [detailDrawerOpen, setDetailDrawerOpen] = useState(false)
+	const [exportDialogOpen, setExportDialogOpen] = useState(false)
 
-  // Abre el modal listo para registrar un nuevo proveedor.
-  const openCreate = () => {
-    setEditingProvider(null)
-    setFormError(null)
-    form.reset(defaultValues)
-    setDialogOpen(true)
-  }
+	const [exportScope, setExportScope] = useState<"page" | "filtered" | "all">("filtered")
+	const [exportFormat, setExportFormat] = useState<"csv" | "xlsx" | "pdf">("xlsx")
+	const [exportStatus, setExportStatus] = useState<"idle" | "exporting" | "done">("idle")
+	const [exportError, setExportError] = useState<string | null>(null)
 
-  // Carga la información en el formulario para editarla sin salir de la tabla.
-  const openEdit = (proveedor: ProveedorRecord) => {
-    setEditingProvider(proveedor)
-    setFormError(null)
-    form.reset({
-      nombre_proveedor: proveedor.nombre_proveedor,
-      ruc_cedula: proveedor.ruc_cedula,
-      correo: proveedor.correo ?? "",
-      telefono: proveedor.telefono ?? "",
-      direccion: proveedor.direccion ?? "",
-    })
-    setDialogOpen(true)
-  }
+	const [selectedProveedor, setSelectedProveedor] = useState<ProveedorRecord | null>(null)
+	const [editingProveedor, setEditingProveedor] = useState<ProveedorRecord | null>(null)
 
-  // Normalizamos whitespace antes de mandar la petición.
-  const buildPayload = (values: ProveedorFormValues): ProveedorPayload => ({
-    nombre_proveedor: values.nombre_proveedor.trim(),
-    ruc_cedula: values.ruc_cedula.trim(),
-    correo: values.correo?.trim() ? values.correo.trim() : null,
-    telefono: values.telefono?.trim() ? values.telefono.trim() : null,
-    direccion: values.direccion?.trim() ? values.direccion.trim() : null,
-  })
+	const debouncedSearch = useDebouncedValue(searchInput, 300)
 
-  // POST /proveedor: al terminar invalidamos la query y cerramos el modal.
-  const createMutation = useMutation({
-    mutationFn: (payload: ProveedorPayload) => api.post("/proveedor", payload).then((res) => res.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["proveedores"] })
-      closeDialog()
-    },
-    onError: (error: unknown) => {
-      setFormError(getApiErrorMessage(error, "No se pudo crear el proveedor"))
-    },
-  })
+	const proveedoresQuery = useProveedoresQuery()
+	const proveedores = useMemo(() => proveedoresQuery.data ?? [], [proveedoresQuery.data])
 
-  // PUT /proveedor/:id comparte la misma cadencia que el alta.
-  const updateMutation = useMutation({
-    mutationFn: ({ id, payload }: { id: number; payload: ProveedorPayload }) =>
-      api.put(`/proveedor/${id}`, payload).then((res) => res.data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["proveedores"] })
-      closeDialog()
-    },
-    onError: (error: unknown) => {
-      setFormError(getApiErrorMessage(error, "No se pudo actualizar el proveedor"))
-    },
-  })
+	const createMutation = useMutation({
+		mutationFn: (payload: ProveedorPayload) => proveedorClient.create(payload),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: proveedoresQueryKey })
+			setCreateDialogOpen(false)
+			form.reset(defaultValues)
+		},
+	})
 
-  // DELETE /proveedor/:id: si falla mostramos la razón tal como viene del backend.
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => api.delete(`/proveedor/${id}`),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["proveedores"] }),
-    onError: (error: unknown) => {
-      const message = getApiErrorMessage(
-        error,
-        "No se pudo eliminar el proveedor. Verifica si tiene compras o productos asociados."
-      )
-      window.alert(message)
-    },
-  })
+	const updateMutation = useMutation({
+		mutationFn: ({ id, payload }: { id: number; payload: ProveedorPayload }) =>
+			proveedorClient.update(id, payload),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: proveedoresQueryKey })
+			setEditDialogOpen(false)
+			setEditingProveedor(null)
+			editForm.reset(defaultValues)
+		},
+	})
 
-  // Form handler único: decide entre crear y actualizar según `editingProvider`.
-  const onSubmit = form.handleSubmit((values) => {
-    const payload = buildPayload(values)
-    if (editingProvider) {
-      updateMutation.mutate({ id: editingProvider.id_proveedor, payload })
-    } else {
-      createMutation.mutate(payload)
-    }
-  })
+	const deleteMutation = useMutation({
+		mutationFn: (id: number) => proveedorClient.remove(id),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: proveedoresQueryKey })
+		},
+	})
 
-  // Confirmación simple para evitar borrar proveedores activos accidentalmente.
-  const handleDelete = (proveedor: ProveedorRecord) => {
-    if (deleteMutation.isPending) return
-    const confirmed = window.confirm(
-      `¿Seguro que deseas eliminar a ${proveedor.nombre_proveedor}? Esta acción es permanente.`
-    )
-    if (confirmed) {
-      deleteMutation.mutate(proveedor.id_proveedor)
-    }
-  }
+	const form = useForm<ProveedorFormValues>({
+		resolver: zodResolver(proveedorSchema),
+		defaultValues,
+	})
 
-  const proveedores = useMemo(() => proveedoresQuery.data ?? [], [proveedoresQuery.data])
-  const totalConCorreo = useMemo(() => proveedores.filter((p) => !!p.correo).length, [proveedores])
-  const totalConTelefono = useMemo(() => proveedores.filter((p) => !!p.telefono).length, [proveedores])
-  const recientes = useMemo(() => proveedores.slice(-4).reverse(), [proveedores])
+	const editForm = useForm<ProveedorFormValues>({
+		resolver: zodResolver(proveedorSchema),
+		defaultValues,
+	})
 
-  if (!isAdmin) {
-    return (
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6">
-        <div className="flex items-center gap-3 text-amber-800">
-          <ShieldAlert className="h-5 w-5" />
-          <div>
-            <p className="font-semibold">Acceso restringido</p>
-            <p className="text-sm">Solo administradores pueden gestionar proveedores.</p>
-          </div>
-        </div>
-      </div>
-    )
-  }
+	useEffect(() => {
+		localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(pageSize))
+	}, [pageSize])
 
-  return (
-    <div className="space-y-8">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-slate-500">Cadena de suministro</p>
-          <h1 className="text-3xl font-semibold text-slate-900">Proveedores</h1>
-          <p className="mt-1 text-sm text-slate-500">Controla contactos y documentación desde un solo lugar.</p>
-        </div>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700"
-        >
-          <Plus className="h-4 w-4" />
-          Nuevo proveedor
-        </button>
-      </header>
+	useEffect(() => {
+		setCurrentPage(1)
+	}, [debouncedSearch, filters, pageSize])
 
-      <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-        <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase text-slate-500">Total registrados</p>
-          <p className="mt-2 text-3xl font-semibold text-slate-900">{proveedores.length}</p>
-          <p className="text-sm text-slate-500">Activos según la base de datos</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase text-slate-500">Con correo verificado</p>
-          <p className="mt-2 text-3xl font-semibold text-blue-600">{totalConCorreo}</p>
-          <p className="text-sm text-slate-500">Contactos listos para campañas</p>
-        </article>
-        <article className="rounded-2xl border border-slate-200 bg-white p-5">
-          <p className="text-xs uppercase text-slate-500">Con teléfono</p>
-          <p className="mt-2 text-3xl font-semibold text-purple-600">{totalConTelefono}</p>
-          <p className="text-sm text-slate-500">Disponibles para seguimiento</p>
-        </article>
-      </section>
+	const filteredProveedores = useMemo(() => {
+		if (!proveedoresQuery.data) return []
 
-      {proveedoresQuery.isError && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
-          <div className="flex items-center gap-2 font-medium">
-            <AlertCircle className="h-4 w-4" />
-            Error al cargar proveedores. Intenta nuevamente.
-          </div>
-        </div>
-      )}
+		let result = proveedoresQuery.data.filter((proveedor) => matchesProveedorSearch(proveedor, debouncedSearch))
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[2fr_1fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200">
-              <thead className="bg-slate-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Proveedor</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Contacto</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Dirección</th>
-                  <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200 bg-white">
-                {proveedores.map((proveedor) => (
-                  <tr key={proveedor.id_proveedor} className="hover:bg-slate-50">
-                    <td className="px-6 py-4">
-                      <p className="text-sm font-semibold text-slate-900">{proveedor.nombre_proveedor}</p>
-                      <p className="text-xs text-slate-500">RUC/Cédula: {proveedor.ruc_cedula}</p>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-700">
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 text-slate-400" />
-                        {proveedor.correo ?? "Sin correo"}
-                      </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <Phone className="h-4 w-4 text-slate-400" />
-                        {proveedor.telefono ?? "Sin teléfono"}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-slate-700">
-                      {proveedor.direccion ?? "Sin dirección"}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() => openEdit(proveedor)}
-                          className="rounded-lg border border-slate-200 p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                        >
-                          <Edit2 className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(proveedor)}
-                          className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
-                          disabled={deleteMutation.isPending}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          {proveedoresQuery.isLoading && (
-            <div className="flex items-center justify-center gap-2 p-6 text-slate-500">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Cargando proveedores...
-            </div>
-          )}
-          {!proveedoresQuery.isLoading && proveedores.length === 0 && (
-            <div className="p-8 text-center text-slate-500">
-              <Building2 size={36} className="mx-auto mb-2 opacity-50" />
-              <p>No hay proveedores registrados.</p>
-            </div>
-          )}
-        </div>
+		// Aplicar ordenamiento
+		result.sort((a, b) => {
+			switch (filters.orden) {
+				case "name_asc":
+					return a.nombre_proveedor.localeCompare(b.nombre_proveedor)
+				case "name_desc":
+					return b.nombre_proveedor.localeCompare(a.nombre_proveedor)
+				case "date_asc":
+					return new Date(a.fecha_registro).getTime() - new Date(b.fecha_registro).getTime()
+				case "date_desc":
+					return new Date(b.fecha_registro).getTime() - new Date(a.fecha_registro).getTime()
+				default:
+					return 0
+			}
+		})
 
-        <aside className="rounded-2xl border border-slate-200 bg-white p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Ingresos recientes</h2>
-              <p className="text-sm text-slate-500">Últimas altas en el sistema.</p>
-            </div>
-            <CalendarClock className="h-5 w-5 text-slate-400" />
-          </div>
-          {recientes.length === 0 ? (
-            <p className="text-sm text-slate-500">Aún no registras proveedores.</p>
-          ) : (
-            <ul className="space-y-3">
-              {recientes.map((prov) => (
-                <li key={prov.id_proveedor} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-sm">
-                  <p className="font-medium text-slate-900">{prov.nombre_proveedor}</p>
-                  <p className="text-xs text-slate-500">
-                    {dateFormatter.format(new Date(prov.fecha_registro))}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
-      </div>
+		return result
+	}, [proveedoresQuery.data, debouncedSearch, filters])
 
-      <Dialog
-        open={dialogOpen}
-        onOpenChange={(open) => {
-          if (!open) {
-            closeDialog()
-          } else {
-            setDialogOpen(true)
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editingProvider ? "Editar proveedor" : "Nuevo proveedor"}</DialogTitle>
-            <DialogDescription>Todos los campos serán validados con las reglas del backend.</DialogDescription>
-          </DialogHeader>
+	const paginatedProveedores = useMemo(() => {
+		const start = (currentPage - 1) * pageSize
+		const end = start + pageSize
+		return filteredProveedores.slice(start, end)
+	}, [filteredProveedores, currentPage, pageSize])
 
-          {formError && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{formError}</div>
-          )}
+	const totalPages = Math.ceil(filteredProveedores.length / pageSize)
 
-          <form onSubmit={onSubmit} className="mt-4 space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-medium uppercase text-slate-500">Nombre del proveedor</label>
-                <input
-                  {...form.register("nombre_proveedor")}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-                {form.formState.errors.nombre_proveedor && (
-                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.nombre_proveedor.message}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs font-medium uppercase text-slate-500">RUC / Cédula</label>
-                <input
-                  {...form.register("ruc_cedula")}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  placeholder="13 dígitos"
-                />
-                {form.formState.errors.ruc_cedula && (
-                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.ruc_cedula.message}</p>
-                )}
-              </div>
-            </div>
+	const filterChips = useMemo(() => {
+		const chips: { key: "orden"; label: string }[] = []
+		if (filters.orden !== defaultFilters.orden) {
+			const label =
+				filters.orden === "name_asc"
+					? "Nombre A-Z"
+					: filters.orden === "name_desc"
+						? "Nombre Z-A"
+						: filters.orden === "date_asc"
+							? "Fecha ↑"
+							: "Fecha ↓"
+			chips.push({ key: "orden", label })
+		}
+		return chips
+	}, [filters])
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <label className="text-xs font-medium uppercase text-slate-500">Correo</label>
-                <input
-                  type="email"
-                  {...form.register("correo")}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  placeholder="proveedor@empresa.com"
-                />
-                {form.formState.errors.correo && (
-                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.correo.message}</p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs font-medium uppercase text-slate-500">Teléfono</label>
-                <input
-                  type="tel"
-                  {...form.register("telefono")}
-                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  placeholder="0999999999"
-                />
-                {form.formState.errors.telefono && (
-                  <p className="mt-1 text-xs text-red-600">{form.formState.errors.telefono.message}</p>
-                )}
-              </div>
-            </div>
+	const handleCreate = useCallback(
+		(values: ProveedorFormValues) => {
+			const payload: ProveedorPayload = {
+				nombre_proveedor: values.nombre_proveedor,
+				ruc_cedula: values.ruc_cedula,
+				correo: values.correo || null,
+				telefono: values.telefono || null,
+				direccion: values.direccion || null,
+			}
+			createMutation.mutate(payload)
+		},
+		[createMutation]
+	)
 
-            <div>
-              <label className="text-xs font-medium uppercase text-slate-500">Dirección</label>
-              <textarea
-                rows={3}
-                {...form.register("direccion")}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                placeholder="Ciudad, calle, referencia"
-              />
-              {form.formState.errors.direccion && (
-                <p className="mt-1 text-xs text-red-600">{form.formState.errors.direccion.message}</p>
-              )}
-            </div>
+	const handleEdit = useCallback(
+		(values: ProveedorFormValues) => {
+			if (!editingProveedor) return
+			const payload: ProveedorPayload = {
+				nombre_proveedor: values.nombre_proveedor,
+				ruc_cedula: values.ruc_cedula,
+				correo: values.correo || null,
+				telefono: values.telefono || null,
+				direccion: values.direccion || null,
+			}
+			updateMutation.mutate({ id: editingProveedor.id_proveedor, payload })
+		},
+		[editingProveedor, updateMutation]
+	)
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={closeDialog}
-                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
-                disabled={createMutation.isPending || updateMutation.isPending}
-              >
-                {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="h-4 w-4 animate-spin" />}
-                Guardar
-              </button>
-            </div>
-          </form>
-        </DialogContent>
-      </Dialog>
-    </div>
-  )
+	const handleDelete = useCallback(
+		(proveedor: ProveedorRecord) => {
+			if (confirm(`¿Estás seguro de eliminar al proveedor ${proveedor.nombre_proveedor}?`)) {
+				deleteMutation.mutate(proveedor.id_proveedor)
+			}
+		},
+		[deleteMutation]
+	)
+
+	const handleOpenDetail = useCallback((proveedor: ProveedorRecord) => {
+		setSelectedProveedor(proveedor)
+		setDetailDrawerOpen(true)
+	}, [])
+
+	const handleOpenEdit = useCallback((proveedor: ProveedorRecord) => {
+		setEditingProveedor(proveedor)
+		editForm.reset({
+			nombre_proveedor: proveedor.nombre_proveedor,
+			ruc_cedula: proveedor.ruc_cedula,
+			correo: proveedor.correo || "",
+			telefono: proveedor.telefono || "",
+			direccion: proveedor.direccion || "",
+		})
+		setEditDialogOpen(true)
+	}, [editForm])
+
+	const getSourceForExport = async (scope: "page" | "filtered" | "all") => {
+		if (scope === "page") return paginatedProveedores
+		if (scope === "filtered") return filteredProveedores
+		// all
+		if (proveedoresQuery.data) return proveedores
+		const fetched = await queryClient.fetchQuery({
+			queryKey: ["proveedores"],
+			queryFn: async () => {
+				const { data } = await api.get<ProveedorRecord[]>("/proveedor")
+				return Array.isArray(data) ? data : []
+			}
+		})
+		return fetched ?? []
+	}
+
+	const buildExportRows = (records: ProveedorRecord[]): ExportRow[] => {
+		return records.map((proveedor) => ({
+			"ID Proveedor": proveedor.id_proveedor.toString(),
+			"Nombre": proveedor.nombre_proveedor,
+			"Cédula/RUC": proveedor.ruc_cedula,
+			"Correo": proveedor.correo || "",
+			"Teléfono": proveedor.telefono || "",
+			"Dirección": proveedor.direccion || "",
+			"Fecha Registro": dateFormatter.format(new Date(proveedor.fecha_registro)),
+		}))
+	}
+
+	const runExport = async (): Promise<boolean> => {
+		setExportError(null)
+		setExportStatus("exporting")
+		try {
+			const source = await getSourceForExport(exportScope)
+			const rows = buildExportRows(source)
+			if (rows.length === 0) {
+				setExportError("No hay proveedores para exportar")
+				setExportStatus("idle")
+				return false
+			}
+			const filenameBase = `proveedores_${exportScope}_${new Date().toISOString().split('T')[0]}`
+			switch (exportFormat) {
+				case "csv":
+					exportToCSV(rows, filenameBase)
+					break
+				case "xlsx":
+					exportToXLSX(rows, filenameBase)
+					break
+				case "pdf":
+					exportToPDF(rows, filenameBase)
+					break
+			}
+			setExportStatus("done")
+			return true
+		} catch (error) {
+			setExportError("No se pudo exportar")
+			setExportStatus("idle")
+			return false
+		}
+	}
+
+	const startItem = (currentPage - 1) * pageSize + 1
+	const endItem = Math.min(currentPage * pageSize, filteredProveedores.length)
+
+	return (
+		<div className="space-y-8">
+			<header className="flex flex-wrap items-center justify-between gap-3">
+				<div>
+					<p className="text-xs uppercase tracking-wide text-slate-500">Gestión</p>
+					<h1 className="text-3xl font-semibold text-slate-900">Proveedores</h1>
+					<p className="mt-1 text-sm text-slate-500">Administra la información de tus proveedores.</p>
+				</div>
+			</header>
+
+			<section className="grid grid-cols-1 gap-4 md:grid-cols-3">
+				<article className="rounded-2xl border border-slate-200 bg-white p-5">
+					<p className="text-xs uppercase text-slate-500">Proveedores registrados</p>
+					<p className="mt-2 text-3xl font-semibold text-slate-900">{filteredProveedores.length}</p>
+					<p className="text-sm text-slate-500">Total en el sistema</p>
+				</article>
+				<article className="rounded-2xl border border-slate-200 bg-white p-5">
+					<p className="text-xs uppercase text-slate-500">Proveedores activos</p>
+					<p className="mt-2 text-3xl font-semibold text-blue-600">{filteredProveedores.length}</p>
+					<p className="text-sm text-slate-500">Disponibles para compras</p>
+				</article>
+				<article className="rounded-2xl border border-slate-200 bg-white p-5">
+					<p className="text-xs uppercase text-slate-500">Nuevos este mes</p>
+					<p className="mt-2 text-3xl font-semibold text-purple-600">
+						{filteredProveedores.filter(p => {
+							const regDate = new Date(p.fecha_registro)
+							const now = new Date()
+							return regDate.getMonth() === now.getMonth() && regDate.getFullYear() === now.getFullYear()
+						}).length}
+					</p>
+					<p className="text-sm text-slate-500">Registrados recientemente</p>
+				</article>
+			</section>
+
+			{proveedoresQuery.isError && (
+				<div className="rounded-xl border border-red-200 bg-red-50 p-4 text-red-700">
+					<div className="flex items-center gap-2 font-medium">
+						<AlertCircle className="h-4 w-4" />
+						Error al cargar proveedores. Intenta nuevamente.
+					</div>
+				</div>
+			)}
+
+			<section aria-labelledby="proveedores-listado" className="rounded-2xl border border-slate-200 bg-white">
+				<ProveedoresListHeader
+					startItem={startItem}
+					endItem={endItem}
+					resultsCount={filteredProveedores.length}
+					searchInput={searchInput}
+					onSearchInputChange={setSearchInput}
+					onOpenFilters={() => setFiltersDrawerOpen(true)}
+					viewMode={viewMode}
+					onChangeViewMode={setViewMode}
+					pageSize={pageSize}
+					onChangePageSize={(next) => {
+						setPageSize(next as PageSizeOption)
+						setCurrentPage(1)
+					}}
+					onOpenCreate={() => setCreateDialogOpen(true)}
+					onOpenExport={() => setExportDialogOpen(true)}
+					filterChips={filterChips}
+					onRemoveChip={(key) => {
+						if (key === "orden") {
+							setFilters((prev) => ({ ...prev, orden: defaultFilters.orden }))
+						}
+					}}
+					onClearAllFilters={() => setFilters(defaultFilters)}
+				/>
+
+				{viewMode === "table" ? (
+					<div className="overflow-x-auto">
+						<table className="min-w-full divide-y divide-slate-200">
+							<thead className="bg-slate-50">
+								<tr>
+									<th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+										Proveedor
+									</th>
+									<th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+										Contacto
+									</th>
+									<th className="px-6 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+										Fecha Registro
+									</th>
+									<th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
+										Acciones
+									</th>
+								</tr>
+							</thead>
+							<tbody className="divide-y divide-slate-200 bg-white">
+								{paginatedProveedores.map((proveedor) => (
+									<tr key={proveedor.id_proveedor} className="hover:bg-slate-50">
+										<td className="px-6 py-4">
+											<div className="flex items-center gap-3">
+												<div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
+													<Building2 className="h-5 w-5 text-slate-600" />
+												</div>
+												<div>
+													<p className="font-medium text-slate-900">
+														{proveedor.nombre_proveedor}
+													</p>
+													<p className="text-sm text-slate-500">
+														{proveedor.ruc_cedula} ({formatEcuadorIdTypeLabel(detectEcuadorIdType(proveedor.ruc_cedula))})
+													</p>
+												</div>
+											</div>
+										</td>
+										<td className="px-6 py-4">
+											<div className="space-y-1">
+												{proveedor.correo && (
+													<div className="flex items-center gap-2 text-sm text-slate-600">
+														<Mail className="h-4 w-4" />
+														{proveedor.correo}
+													</div>
+												)}
+												{proveedor.telefono && (
+													<div className="flex items-center gap-2 text-sm text-slate-600">
+														<Phone className="h-4 w-4" />
+														{proveedor.telefono}
+													</div>
+												)}
+												{proveedor.direccion && (
+													<div className="flex items-center gap-2 text-sm text-slate-600">
+														<MapPin className="h-4 w-4" />
+														{proveedor.direccion}
+													</div>
+												)}
+											</div>
+										</td>
+										<td className="px-6 py-4 text-sm text-slate-600">
+											{dateFormatter.format(new Date(proveedor.fecha_registro))}
+										</td>
+										<td className="px-6 py-4 text-right">
+											<div className="flex items-center justify-end gap-2">
+												<button
+													onClick={() => handleOpenDetail(proveedor)}
+													className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm font-medium shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+												>
+													<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+														<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+													</svg>
+												</button>
+												<button
+													onClick={() => handleOpenEdit(proveedor)}
+													className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-sm font-medium shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-950"
+												>
+													<Edit2 className="h-4 w-4" />
+												</button>
+												<button
+													onClick={() => handleDelete(proveedor)}
+													className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-red-200 bg-white text-sm font-medium text-red-600 shadow-sm transition-colors hover:bg-red-50 hover:text-red-700 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-950"
+												>
+													<Trash2 className="h-4 w-4" />
+												</button>
+											</div>
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				) : (
+					<div className="grid grid-cols-1 gap-4 p-6 md:grid-cols-2 lg:grid-cols-3">
+						{paginatedProveedores.map((proveedor) => (
+							<div key={proveedor.id_proveedor} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm hover:shadow-md transition">
+								<div className="flex items-start justify-between">
+									<div>
+										<p className="font-semibold text-slate-900">{proveedor.nombre_proveedor}</p>
+										<p className="text-sm text-slate-500">
+											{proveedor.ruc_cedula} ({formatEcuadorIdTypeLabel(detectEcuadorIdType(proveedor.ruc_cedula))})
+										</p>
+									</div>
+									<button
+										onClick={() => handleOpenDetail(proveedor)}
+										className="rounded-lg border border-slate-200 p-2 text-slate-600 hover:border-slate-300 hover:text-slate-900"
+									>
+										<svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+											<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+										</svg>
+									</button>
+								</div>
+								<div className="mt-3 space-y-2">
+									{proveedor.correo && (
+										<p className="text-sm text-slate-700">
+											<span className="font-medium">Correo:</span> {proveedor.correo}
+										</p>
+									)}
+									{proveedor.telefono && (
+										<p className="text-sm text-slate-700">
+											<span className="font-medium">Teléfono:</span> {proveedor.telefono}
+										</p>
+									)}
+									<p className="text-sm text-slate-700">
+										<span className="font-medium">Registro:</span> {dateFormatter.format(new Date(proveedor.fecha_registro))}
+									</p>
+								</div>
+							</div>
+						))}
+					</div>
+				)}
+
+				{/* Estados de carga y vacío */}
+				{proveedoresQuery.isLoading && (
+					<div className="flex items-center justify-center gap-2 p-6 text-slate-500">
+						<Loader2 className="h-4 w-4 animate-spin" />
+						Cargando proveedores...
+					</div>
+				)}
+
+				{!proveedoresQuery.isLoading && paginatedProveedores.length === 0 && filteredProveedores.length === 0 && (
+					<div className="p-8 text-center text-slate-500">
+						<Building2 size={36} className="mx-auto mb-2 opacity-50" />
+						<p>No hay proveedores registrados.</p>
+					</div>
+				)}
+
+				{!proveedoresQuery.isLoading && paginatedProveedores.length === 0 && filteredProveedores.length > 0 && (
+					<div className="p-8 text-center text-slate-500">
+						<Building2 size={36} className="mx-auto mb-2 opacity-50" />
+						<p>No se encontraron proveedores con los filtros aplicados.</p>
+					</div>
+				)}
+
+				{/* Paginación */}
+				{totalPages > 1 && (
+					<div className="flex items-center justify-between border-t border-slate-200 bg-white px-6 py-3">
+						<div className="flex items-center gap-2">
+							<button
+								onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+								disabled={currentPage === 1}
+								className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Anterior
+							</button>
+							<span className="text-sm text-slate-600">
+								Página {currentPage} de {totalPages}
+							</span>
+							<button
+								onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+								disabled={currentPage === totalPages}
+								className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Siguiente
+							</button>
+						</div>
+					</div>
+				)}
+			</section>
+
+			{/* Drawers y Dialogs */}
+			<ProveedoresFiltersDrawer
+				open={filtersDrawerOpen}
+				onOpenChange={setFiltersDrawerOpen}
+				filters={filters}
+				onFiltersChange={setFilters}
+			/>
+
+			<ProveedoresDetailDrawer
+				open={detailDrawerOpen}
+				onOpenChange={setDetailDrawerOpen}
+				proveedor={selectedProveedor}
+				dateFormatter={dateFormatter}
+				onEdit={() => {
+					if (selectedProveedor) {
+						handleOpenEdit(selectedProveedor)
+						setDetailDrawerOpen(false)
+					}
+				}}
+				onClose={() => setDetailDrawerOpen(false)}
+			/>
+
+			{/* Create Dialog */}
+			{createDialogOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setCreateDialogOpen(false)}>
+					<div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-8" onClick={(e) => e.stopPropagation()}>
+						<div className="mb-6">
+							<h2 className="text-xl font-semibold text-slate-900">Registrar proveedor</h2>
+							<p className="text-sm text-slate-600">Agrega un nuevo proveedor al sistema.</p>
+						</div>
+
+						{createMutation.isError && (
+							<div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 mb-4">
+								{getApiErrorMessage(createMutation.error, "No se pudo registrar el proveedor")}
+							</div>
+						)}
+
+						<form onSubmit={form.handleSubmit(handleCreate)} className="space-y-6">
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Nombre del Proveedor
+								</label>
+								<input
+									{...form.register("nombre_proveedor")}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{form.formState.errors.nombre_proveedor && (
+									<p className="mt-1 text-xs text-red-600">{form.formState.errors.nombre_proveedor.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									RUC/Cédula
+								</label>
+								<input
+									{...form.register("ruc_cedula")}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{form.formState.errors.ruc_cedula && (
+									<p className="mt-1 text-xs text-red-600">{form.formState.errors.ruc_cedula.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Correo
+								</label>
+								<input
+									{...form.register("correo")}
+									type="email"
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{form.formState.errors.correo && (
+									<p className="mt-1 text-xs text-red-600">{form.formState.errors.correo.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Teléfono
+								</label>
+								<input
+									{...form.register("telefono")}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{form.formState.errors.telefono && (
+									<p className="mt-1 text-xs text-red-600">{form.formState.errors.telefono.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Dirección
+								</label>
+								<textarea
+									{...form.register("direccion")}
+									rows={3}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{form.formState.errors.direccion && (
+									<p className="mt-1 text-xs text-red-600">{form.formState.errors.direccion.message}</p>
+								)}
+							</div>
+
+							<div className="flex justify-end gap-3">
+								<button
+									type="button"
+									onClick={() => setCreateDialogOpen(false)}
+									className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+								>
+									Cancelar
+								</button>
+								<button
+									type="submit"
+									disabled={createMutation.isPending}
+									className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+								>
+									{createMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+									Crear Proveedor
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			)}
+
+			{/* Edit Dialog */}
+			{editDialogOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditDialogOpen(false)}>
+					<div className="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl bg-white p-8" onClick={(e) => e.stopPropagation()}>
+						<div className="mb-6">
+							<h2 className="text-xl font-semibold text-slate-900">Editar proveedor</h2>
+							<p className="text-sm text-slate-600">Modifica la información del proveedor.</p>
+						</div>
+
+						{updateMutation.isError && (
+							<div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700 mb-4">
+								{getApiErrorMessage(updateMutation.error, "No se pudo actualizar el proveedor")}
+							</div>
+						)}
+
+						<form onSubmit={editForm.handleSubmit(handleEdit)} className="space-y-6">
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Nombre del Proveedor
+								</label>
+								<input
+									{...editForm.register("nombre_proveedor")}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{editForm.formState.errors.nombre_proveedor && (
+									<p className="mt-1 text-xs text-red-600">{editForm.formState.errors.nombre_proveedor.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									RUC/Cédula
+								</label>
+								<input
+									{...editForm.register("ruc_cedula")}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{editForm.formState.errors.ruc_cedula && (
+									<p className="mt-1 text-xs text-red-600">{editForm.formState.errors.ruc_cedula.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Correo
+								</label>
+								<input
+									{...editForm.register("correo")}
+									type="email"
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{editForm.formState.errors.correo && (
+									<p className="mt-1 text-xs text-red-600">{editForm.formState.errors.correo.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Teléfono
+								</label>
+								<input
+									{...editForm.register("telefono")}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{editForm.formState.errors.telefono && (
+									<p className="mt-1 text-xs text-red-600">{editForm.formState.errors.telefono.message}</p>
+								)}
+							</div>
+							<div>
+								<label className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+									Dirección
+								</label>
+								<textarea
+									{...editForm.register("direccion")}
+									rows={3}
+									className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+								/>
+								{editForm.formState.errors.direccion && (
+									<p className="mt-1 text-xs text-red-600">{editForm.formState.errors.direccion.message}</p>
+								)}
+							</div>
+
+							<div className="flex justify-end gap-3">
+								<button
+									type="button"
+									onClick={() => setEditDialogOpen(false)}
+									className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+								>
+									Cancelar
+								</button>
+								<button
+									type="submit"
+									disabled={updateMutation.isPending}
+									className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+								>
+									{updateMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+									Guardar Cambios
+								</button>
+							</div>
+						</form>
+					</div>
+				</div>
+			)}
+
+			{/* Export Dialog */}
+			<Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
+				<DialogContent className="max-w-3xl" disableOutsideClose hideCloseButton>
+					<DialogHeader>
+						<DialogTitle>Exportar proveedores</DialogTitle>
+						<DialogDescription>Selecciona el alcance y el formato de exportación.</DialogDescription>
+					</DialogHeader>
+
+					<div className="grid gap-6 md:grid-cols-2">
+						<div className="grid gap-3">
+							<p className="text-sm font-semibold text-slate-900">Alcance</p>
+							<div className="grid gap-2">
+								<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 hover:bg-slate-50">
+									<input
+										type="radio"
+										name="export-scope"
+										checked={exportScope === "page"}
+										onChange={() => setExportScope("page")}
+										className="mt-1"
+									/>
+									<div>
+										<p className="text-sm font-semibold text-slate-900">Página actual</p>
+										<p className="text-xs text-slate-500">Lo visible en pantalla según la paginación actual.</p>
+									</div>
+								</label>
+								<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 hover:bg-slate-50">
+									<input
+										type="radio"
+										name="export-scope"
+										checked={exportScope === "filtered"}
+										onChange={() => setExportScope("filtered")}
+										className="mt-1"
+									/>
+									<div>
+										<p className="text-sm font-semibold text-slate-900">Filtradas</p>
+										<p className="text-xs text-slate-500">Aplica búsqueda + filtros + orden, sin importar página.</p>
+									</div>
+								</label>
+								<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 hover:bg-slate-50">
+									<input
+										type="radio"
+										name="export-scope"
+										checked={exportScope === "all"}
+										onChange={() => setExportScope("all")}
+										className="mt-1"
+									/>
+									<div>
+										<p className="text-sm font-semibold text-slate-900">Todo</p>
+										<p className="text-xs text-slate-500">Ignora filtros y exporta todos los proveedores.</p>
+									</div>
+								</label>
+							</div>
+						</div>
+
+						<div className="grid gap-3">
+							<p className="text-sm font-semibold text-slate-900">Formato</p>
+							<div className="grid gap-2">
+								<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 hover:bg-slate-50">
+									<input
+										type="radio"
+										name="export-format"
+										checked={exportFormat === "csv"}
+										onChange={() => setExportFormat("csv")}
+										className="mt-1"
+									/>
+									<div>
+										<p className="text-sm font-semibold text-slate-900">CSV</p>
+										<p className="text-xs text-slate-500">Compatible con Excel (separador ;).</p>
+									</div>
+								</label>
+								<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 hover:bg-slate-50">
+									<input
+										type="radio"
+										name="export-format"
+										checked={exportFormat === "xlsx"}
+										onChange={() => setExportFormat("xlsx")}
+										className="mt-1"
+									/>
+									<div>
+										<p className="text-sm font-semibold text-slate-900">Excel (.xlsx)</p>
+										<p className="text-xs text-slate-500">Hoja "Proveedores" con columnas formateadas.</p>
+									</div>
+								</label>
+								<label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 text-slate-900 hover:bg-slate-50">
+									<input
+										type="radio"
+										name="export-format"
+										checked={exportFormat === "pdf"}
+										onChange={() => setExportFormat("pdf")}
+										className="mt-1"
+									/>
+									<div>
+										<p className="text-sm font-semibold text-slate-900">PDF</p>
+										<p className="text-xs text-slate-500">Tabla en PDF (landscape).</p>
+									</div>
+								</label>
+							</div>
+						</div>
+					</div>
+
+					{exportError && (
+						<div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{exportError}</div>
+					)}
+
+					<DialogFooter>
+						<button
+							type="button"
+							onClick={() => {
+								if (exportStatus === "exporting") return
+								setExportDialogOpen(false)
+							}}
+							disabled={exportStatus === "exporting"}
+							className="inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+						>
+							Cancelar
+						</button>
+						<button
+							type="button"
+							onClick={async () => {
+								const ok = await runExport()
+								if (ok) setExportDialogOpen(false)
+							}}
+							disabled={exportStatus === "exporting"}
+							className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+						>
+							{exportStatus === "exporting" ? "Exportando…" : exportStatus === "done" ? "Listo" : "Aceptar"}
+						</button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</div>
+	)
 }

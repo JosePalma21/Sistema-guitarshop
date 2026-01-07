@@ -302,17 +302,19 @@ export const AppLayout = () => {
 
             <GlobalSearch />
 
-            <UserMenu
+            <div className="ml-auto">
+              <UserMenu
 
-              name={storedUser?.nombre_completo}
+                name={storedUser?.nombre_completo}
 
-              email={storedUser?.correo}
+                email={storedUser?.correo}
 
-              onEditProfile={() => navigate("/perfil")}
+                onEditProfile={() => navigate("/perfil")}
 
-              onLogout={handleLogout}
+                onLogout={handleLogout}
 
-            />
+              />
+            </div>
 
           </header>
 
