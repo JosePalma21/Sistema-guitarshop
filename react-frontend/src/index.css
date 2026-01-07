@@ -101,6 +101,69 @@ body {
   background-color: var(--color-accent);
 }
 
+/* ============================
+   ESTILOS DE IMPRESIÓN PARA NOTA DE ENTREGA
+   ============================ */
+@media print {
+  /* Ocultar todo el contenido de la página */
+  body * {
+    visibility: hidden;
+  }
+
+  /* Mostrar solo la factura */
+  .printable-invoice,
+  .printable-invoice * {
+    visibility: visible;
+  }
+
+  /* Posicionar la factura en la esquina superior izquierda */
+  .printable-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    background: white;
+    margin: 0;
+    padding: 10mm 15mm;
+  }
+
+  /* Ocultar elementos con clase no-print */
+  .no-print {
+    display: none !important;
+  }
+
+  /* Configuración de página */
+  @page {
+    size: A4;
+    margin: 10mm 15mm;
+  }
+
+  /* Asegurar que las tablas no se rompan mal */
+  table {
+    page-break-inside: auto;
+  }
+
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  /* Evitar saltos de página en encabezados */
+  thead {
+    display: table-header-group;
+  }
+
+  /* Sin sombras ni bordes redondeados en impresión */
+  * {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+}
+
+.btn-primary:hover {
+  background-color: var(--color-accent);
+}
+
 /* Enlaces */
 a {
   color: var(--color-primary);
@@ -140,6 +203,31 @@ p {
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media print {
+  body {
+    background: #fff !important;
+  }
+
+  /* Oculta todo por defecto al imprimir, excepto la factura */
+  body * {
+    visibility: hidden;
+  }
+
+  .printable-invoice,
+  .printable-invoice * {
+    visibility: visible;
+  }
+
+  .printable-invoice {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none !important;
+    box-shadow: none !important;
   }
 }
 
