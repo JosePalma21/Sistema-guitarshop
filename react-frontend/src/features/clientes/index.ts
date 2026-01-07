@@ -1,0 +1,6 @@
+export { default as ClientesPage } from "./ClientesPage"
+export { clienteClient } from "./cliente.client"
+export type { ClienteRecord, ClientePayload } from "./cliente.types"
+export { matchesClienteSearch } from "./cliente.utils"
+export { exportToCSV, exportToPDF, exportToXLSX, type ExportRow } from "./exportClientes"
+export { useClientesQuery } from "./useClientesQuery"
