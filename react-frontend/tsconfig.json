@@ -19,6 +19,9 @@
     "paths": {
       "@/*": ["src/*"],
       "@shared/*": ["../shared/*"]
-    }
+    },
+    "skipLibCheck": true
   }
+  ,
+  "exclude": ["node_modules", "dist", "build"]
 }

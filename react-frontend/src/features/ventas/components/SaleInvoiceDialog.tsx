@@ -1,9 +1,11 @@
 "use client"
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../../components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../../components/ui/dialog"
 import { Printer, Download, Mail, X } from "lucide-react"
 import { useState, useEffect } from "react"
-import { SaleInvoicePrintable } from "./SaleInvoicePrintable"
+import { SaleInvoiceDocument } from "./SaleInvoiceDocument"
+import { SaleInvoicePreview } from "./SaleInvoicePreview"
+import { PrintRootPortal } from "./PrintRootPortal"
 import { downloadSalePdf } from "../utils/salePdf"
 import { salesService, type VentaDetailRecord } from "../../../services/salesService"
 
@@ -46,12 +48,22 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
   }, [open, saleId])
 
   const handlePrint = () => {
-    window.print()
+    const count = document.querySelectorAll(".printable-invoice").length
+    console.log("printable count", count)
+    if (count !== 1) {
+      console.error("Error: printable-invoice duplicado", count)
+      return
+    }
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print()
+      })
+    })
   }
 
-  const handleDownloadPdf = () => {
+  const handleDownloadPdf = async () => {
     if (sale) {
-      downloadSalePdf(sale)
+      await downloadSalePdf(sale)
     }
   }
 
@@ -67,10 +79,11 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto" hideCloseButton>
+      <DialogContent className="dialog-content max-w-4xl max-h-[90vh] overflow-y-auto" hideCloseButton>
         <DialogHeader className="no-print">
           <div className="flex items-center justify-between">
             <DialogTitle>Factura de venta</DialogTitle>
+            <DialogDescription className="sr-only">Vista de factura para impresión</DialogDescription>
             <button
               type="button"
               onClick={onClose}
@@ -96,8 +109,14 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
 
           {!isLoading && !error && sale && (
             <>
-              <div className="mb-6">
-                <SaleInvoicePrintable sale={sale} />
+              {/* Renderizar en print-root para impresión */}
+              <PrintRootPortal>
+                <SaleInvoiceDocument sale={sale} />
+              </PrintRootPortal>
+
+              {/* Vista en pantalla (sin clase printable) */}
+              <div className="mb-6 overflow-x-auto">
+                <SaleInvoicePreview sale={sale} />
               </div>
 
               <div className="flex gap-3 justify-end border-t pt-4 no-print">

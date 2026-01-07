@@ -533,43 +533,55 @@ export default function ProductsPage() {
 		form.reset(defaultValues)
 	}
 
+	const deferHeavy = (cb: () => void) => {
+		requestAnimationFrame(() => {
+			requestAnimationFrame(cb)
+		})
+	}
+
 	const openCreate = (mode: ModalMode = "single") => {
-		setEditingProduct(null)
-		setFormError(null)
-		setBatchSubmitting(false)
-		setBatchRows([createBlankBatchRow()])
-		setBatchRowSaveErrors({})
-		setDialogExtraTakenCodes([])
-		setModalMode(mode)
-		setImportState(null)
-		setImportError(null)
-		setUploadedPreview(null)
-		setImageMode("url")
-		form.reset(defaultValues)
+		// Abre rápido el modal y difiere el trabajo pesado
 		setDialogOpen(true)
+		deferHeavy(() => {
+			setEditingProduct(null)
+			setFormError(null)
+			setBatchSubmitting(false)
+			setBatchRows([createBlankBatchRow()])
+			setBatchRowSaveErrors({})
+			setDialogExtraTakenCodes([])
+			setModalMode(mode)
+			setImportState(null)
+			setImportError(null)
+			setUploadedPreview(null)
+			setImageMode("url")
+			form.reset(defaultValues)
+		})
 	}
 
 	const openEdit = (producto: ProductoRecord) => {
 		const cachedImage = imagenesQuery.data?.[producto.id_producto] ?? ""
 		const inferredCategory = inferCategoryFromCode(producto.codigo_producto)
-		setEditingProduct(producto)
-		setFormError(null)
-		setModalMode("single")
-		setUploadedPreview(cachedImage?.startsWith("data:") ? cachedImage : null)
-		setImageMode(cachedImage?.startsWith("data:") ? "upload" : "url")
-		form.reset({
-			categoria: inferredCategory ?? "",
-			codigo_producto: producto.codigo_producto,
-			nombre_producto: producto.nombre_producto,
-			descripcion: producto.descripcion ?? "",
-			imagen_url: cachedImage?.startsWith("data:") ? "" : cachedImage ?? "",
-			precio_compra: String(producto.precio_compra ?? 0),
-			precio_venta: String(producto.precio_venta ?? 0),
-			cantidad_stock: String(producto.cantidad_stock ?? 0),
-			stock_minimo: String(producto.stock_minimo ?? 0),
-			id_proveedor: producto.id_proveedor ? String(producto.id_proveedor) : "",
-		})
 		setDialogOpen(true)
+		// Define estado clave rápido y difiere el resto
+		setEditingProduct(producto)
+		deferHeavy(() => {
+			setFormError(null)
+			setModalMode("single")
+			setUploadedPreview(cachedImage?.startsWith("data:") ? cachedImage : null)
+			setImageMode(cachedImage?.startsWith("data:") ? "upload" : "url")
+			form.reset({
+				categoria: inferredCategory ?? "",
+				codigo_producto: producto.codigo_producto,
+				nombre_producto: producto.nombre_producto,
+				descripcion: producto.descripcion ?? "",
+				imagen_url: cachedImage?.startsWith("data:") ? "" : cachedImage ?? "",
+				precio_compra: String(producto.precio_compra ?? 0),
+				precio_venta: String(producto.precio_venta ?? 0),
+				cantidad_stock: String(producto.cantidad_stock ?? 0),
+				stock_minimo: String(producto.stock_minimo ?? 0),
+				id_proveedor: producto.id_proveedor ? String(producto.id_proveedor) : "",
+			})
+		})
 	}
 
 	const openDetail = (producto: ProductoRecord) => {
@@ -1146,9 +1158,9 @@ export default function ProductsPage() {
 
 	const openStockAdjust = (producto: ProductoRecord) => {
 		openEdit(producto)
-		window.setTimeout(() => {
+		deferHeavy(() => {
 			form.setFocus("cantidad_stock")
-		}, 50)
+		})
 	}
 
 	const ProductActionsMenu = ({ producto }: { producto: ProductoRecord }) => {
@@ -1656,7 +1668,7 @@ export default function ProductsPage() {
 						setExportDialogOpen(true)
 					}}
 				>
-					<DialogContent className="max-w-3xl" disableOutsideClose hideCloseButton>
+					<DialogContent className="dialog-content max-w-3xl" disableOutsideClose hideCloseButton>
 						<DialogHeader>
 							<DialogTitle>Exportar productos</DialogTitle>
 							<DialogDescription>Selecciona el alcance y el formato de exportación.</DialogDescription>
@@ -1772,9 +1784,14 @@ export default function ProductsPage() {
 							</button>
 							<button
 								type="button"
-								onClick={async () => {
-									const ok = await runExport()
-									if (ok) setExportDialogOpen(false)
+								onClick={() => {
+									if (exportStatus === "exporting") return
+									requestAnimationFrame(() => {
+										requestAnimationFrame(async () => {
+											const ok = await runExport()
+											if (ok) setExportDialogOpen(false)
+										})
+									})
 								}}
 								disabled={exportStatus === "exporting"}
 								className="inline-flex items-center justify-center rounded-2xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2319,7 +2336,7 @@ export default function ProductsPage() {
 				}}
 			>
 				<DialogContent
-					className="w-full max-w-6xl overflow-hidden p-0 sm:rounded-3xl"
+					className="dialog-content w-full max-w-6xl overflow-hidden p-0 sm:rounded-3xl"
 					hideCloseButton
 					disableOutsideClose
 				>
@@ -2797,7 +2814,13 @@ export default function ProductsPage() {
 											</button>
 											<button
 												type="button"
-												onClick={handleBatchSubmit}
+												onClick={() => {
+													requestAnimationFrame(() => {
+														requestAnimationFrame(() => {
+															void handleBatchSubmit()
+														})
+													})
+												}}
 												className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
 												disabled={batchSubmitting || batchReadyCount === 0 || noProveedoresDisponibles}
 											>
@@ -2928,7 +2951,13 @@ export default function ProductsPage() {
 									</button>
 									<button
 										type="button"
-										onClick={handleImportConfirm}
+										onClick={() => {
+											requestAnimationFrame(() => {
+												requestAnimationFrame(() => {
+													void handleImportConfirm()
+												})
+											})
+										}}
 										className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
 										disabled={importSubmitting || validImportRows.length === 0}
 									>
@@ -2994,7 +3023,7 @@ export default function ProductsPage() {
 					}
 				}}
 			>
-				<DialogContent className="max-w-md" hideCloseButton>
+				<DialogContent className="dialog-content max-w-md" hideCloseButton>
 					<DialogHeader>
 						<DialogTitle>Confirmar eliminación</DialogTitle>
 						<DialogDescription>

@@ -267,7 +267,7 @@ export function SaleCreateModal({ open, onOpenChange, clientes, productos, clien
           onOpenChange(true)
         }}
       >
-        <DialogContent className="w-full max-w-6xl overflow-hidden p-0 sm:rounded-3xl" disableOutsideClose hideCloseButton>
+        <DialogContent className="dialog-content w-full max-w-6xl overflow-hidden p-0 sm:rounded-3xl" disableOutsideClose hideCloseButton>
           <div className="flex h-[95vh] flex-col">
             <DialogHeader className="border-b px-8 py-6 text-left flex-shrink-0">
               <DialogTitle className="text-2xl font-semibold text-slate-900">Registrar venta</DialogTitle>
@@ -334,7 +334,7 @@ export function SaleCreateModal({ open, onOpenChange, clientes, productos, clien
 
       {/* Diálogo de confirmación para cerrar */}
       <Dialog open={showConfirmClose} onOpenChange={setShowConfirmClose}>
-        <DialogContent className="w-full max-w-lg sm:rounded-2xl p-0" disableOutsideClose>
+        <DialogContent className="dialog-content w-full max-w-lg sm:rounded-2xl p-0" disableOutsideClose>
           <DialogHeader className="px-8 py-6">
             <DialogTitle className="text-xl font-semibold text-slate-900">¿Descartar cambios?</DialogTitle>
             <DialogDescription className="text-sm text-slate-600 mt-3">
