@@ -115,10 +115,10 @@ body {
 }
 
 /* ============================
-   PRINT ROOT - OCULTO EN PANTALLA
+   INVOICE PRINT - OCULTO EN PANTALLA
    ============================ */
 @media screen {
-  #print-root {
+  #invoice-print {
     display: none !important;
   }
 }
@@ -145,32 +145,51 @@ body {
     background: white !important;
   }
 
-  /* Ocultar TODO excepto print-root */
+  /* Reglas requeridas: ocultar TODO excepto #invoice-print */
   body * {
-    visibility: hidden !important;
+    visibility: hidden;
   }
 
-  #print-root,
-  #print-root * {
-    visibility: visible !important;
+  #invoice-print,
+  #invoice-print * {
+    visibility: visible;
   }
 
-  /* Posicionar print-root en esquina superior izquierda */
-  #print-root {
-    position: static !important;
-    width: 210mm !important;
+  /* Legibilidad: forzar texto oscuro en impresión */
+  #invoice-print,
+  #invoice-print * {
+    color: #000 !important;
+    -webkit-text-fill-color: #000 !important;
+  }
+
+  #invoice-print {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
+
+  /* Refuerzo para evitar páginas extra: sacar la app del flujo */
+  #root {
+    display: none !important;
+  }
+
+  /* Ajustes del contenedor de impresión */
+  #invoice-print {
+    display: block !important;
+    height: auto !important;
     height: auto !important;
     padding: 0 !important;
     margin: 0 !important;
     background: white !important;
     transform: none !important;
     overflow: visible !important;
-    page-break-after: avoid !important;
   }
 
-  #print-root > * {
-    width: 210mm !important;
+  #invoice-print > * {
+    width: 100% !important;
     height: auto !important;
+    page-break-before: avoid !important;
     page-break-after: avoid !important;
     page-break-inside: avoid !important;
   }
@@ -182,6 +201,9 @@ body {
     box-shadow: none !important;
     border-radius: 0 !important;
     border: none !important;
+    page-break-before: avoid !important;
+    page-break-after: avoid !important;
+    page-break-inside: avoid !important;
   }
 
   /* Remover transforms de Dialog/Radix que causan escala */

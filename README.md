@@ -88,6 +88,11 @@ Si usas **Opción B (importaste guitarshop.sql)**:
 
 npx prisma generate
 
+> Si bajaste cambios que modifican el `schema.prisma` (por ejemplo nuevos campos como `credito.estado_credito`),
+> aplica los cambios a tu BD importada con:
+>
+> npx prisma db push
+
 Esto evita errores por tablas ya existentes.
 
 Para abrir el panel de control visual de Prisma:

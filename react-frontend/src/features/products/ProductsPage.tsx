@@ -524,6 +524,7 @@ export default function ProductsPage() {
 				return
 			}
 			queryClient.invalidateQueries({ queryKey: ["productos"] })
+			queryClient.invalidateQueries({ queryKey: ["productos-catalogo"] })
 			closeDialog()
 		},
 		onError: (error: unknown) => {
@@ -540,6 +541,7 @@ export default function ProductsPage() {
 				console.error("No se pudo limpiar la imagen del producto", error)
 			}
 			queryClient.invalidateQueries({ queryKey: ["productos"] })
+			queryClient.invalidateQueries({ queryKey: ["productos-catalogo"] })
 		},
 	})
 
@@ -881,6 +883,7 @@ export default function ProductsPage() {
 
 		setBatchSubmitting(false)
 		queryClient.invalidateQueries({ queryKey: ["productos"] })
+		queryClient.invalidateQueries({ queryKey: ["productos-catalogo"] })
 		if (createdCodes.length > 0) {
 			setDialogExtraTakenCodes((prev) => {
 				const set = new Set(prev.map((code) => code.toUpperCase()))
@@ -904,76 +907,89 @@ export default function ProductsPage() {
 
 	const normalizedSearch = useMemo(() => debouncedSearchInput.trim().toLowerCase(), [debouncedSearchInput])
 
+	const indexedProducts = useMemo(() => {
+		return productos.map((producto) => {
+			const codigoLower = producto.codigo_producto.toLowerCase()
+			const nombreLower = producto.nombre_producto.toLowerCase()
+			return {
+				producto,
+				codigoLower,
+				nombreLower,
+				categoria: inferCategoryFromCode(producto.codigo_producto),
+				stockStatus: resolveProductStockStatus(producto),
+				salesStatus: getCachedSalesStatus(producto.id_producto),
+				marginStatus: resolveMarginStatus(producto),
+				marginPercent: computeMarginPercent(producto.precio_compra, producto.precio_venta),
+			}
+		})
+	}, [productos, getCachedSalesStatus, salesQueriesVersion])
+
 	const filteredProducts = useMemo(() => {
-		let result = productos
+		let result = indexedProducts
 
 		if (normalizedSearch) {
-			result = result.filter(
-				(producto) =>
-					producto.nombre_producto.toLowerCase().includes(normalizedSearch) ||
-					producto.codigo_producto.toLowerCase().includes(normalizedSearch)
-			)
+			result = result.filter((entry) => entry.nombreLower.includes(normalizedSearch) || entry.codigoLower.includes(normalizedSearch))
 		}
 
 		if (filters.categoria !== "all") {
-			result = result.filter((producto) => inferCategoryFromCode(producto.codigo_producto) === filters.categoria)
+			result = result.filter((entry) => entry.categoria === filters.categoria)
 		}
 
 		if (filters.proveedorId !== "all") {
-			result = result.filter((producto) => producto.id_proveedor === filters.proveedorId)
+			result = result.filter((entry) => entry.producto.id_proveedor === filters.proveedorId)
 		}
 
-		result = result.filter((producto) => matchesStockFilter(producto, filters.stock))
+		if (filters.stock !== "all") {
+			result = result.filter((entry) => entry.stockStatus === filters.stock)
+		}
 
 		if (filters.sales !== "all") {
-			result = result.filter((producto) => matchesSalesFilter(getCachedSalesStatus(producto.id_producto), filters.sales))
+			result = result.filter((entry) => matchesSalesFilter(entry.salesStatus, filters.sales))
 		}
 
-		result = result.filter((producto) => matchesMarginFilter(producto, filters.margin))
+		if (filters.margin !== "all") {
+			result = result.filter((entry) => entry.marginStatus === filters.margin)
+		}
 
 		const sorted = [...result]
 		sorted.sort((a, b) => {
 			switch (filters.orden) {
 				case "name_asc":
-					return a.nombre_producto.localeCompare(b.nombre_producto, "es")
+					return a.producto.nombre_producto.localeCompare(b.producto.nombre_producto, "es")
 				case "name_desc":
-					return b.nombre_producto.localeCompare(a.nombre_producto, "es")
+					return b.producto.nombre_producto.localeCompare(a.producto.nombre_producto, "es")
 				case "stock_asc":
-					return a.cantidad_stock - b.cantidad_stock
+					return a.producto.cantidad_stock - b.producto.cantidad_stock
 				case "stock_desc":
-					return b.cantidad_stock - a.cantidad_stock
+					return b.producto.cantidad_stock - a.producto.cantidad_stock
 				case "price_asc":
-					return a.precio_venta - b.precio_venta
+					return a.producto.precio_venta - b.producto.precio_venta
 				case "price_desc":
-					return b.precio_venta - a.precio_venta
+					return b.producto.precio_venta - a.producto.precio_venta
 				case "margin_asc": {
-					const ma = computeMarginPercent(a.precio_compra, a.precio_venta)
-					const mb = computeMarginPercent(b.precio_compra, b.precio_venta)
-					const va = ma === null ? Number.POSITIVE_INFINITY : ma
-					const vb = mb === null ? Number.POSITIVE_INFINITY : mb
+					const va = a.marginPercent === null ? Number.POSITIVE_INFINITY : a.marginPercent
+					const vb = b.marginPercent === null ? Number.POSITIVE_INFINITY : b.marginPercent
 					return va - vb
 				}
 				case "margin_desc": {
-					const ma = computeMarginPercent(a.precio_compra, a.precio_venta)
-					const mb = computeMarginPercent(b.precio_compra, b.precio_venta)
-					const va = ma === null ? Number.NEGATIVE_INFINITY : ma
-					const vb = mb === null ? Number.NEGATIVE_INFINITY : mb
+					const va = a.marginPercent === null ? Number.NEGATIVE_INFINITY : a.marginPercent
+					const vb = b.marginPercent === null ? Number.NEGATIVE_INFINITY : b.marginPercent
 					return vb - va
 				}
 				case "status_stock":
-					return stockStatusWeight(resolveProductStockStatus(a)) - stockStatusWeight(resolveProductStockStatus(b))
+					return stockStatusWeight(a.stockStatus) - stockStatusWeight(b.stockStatus)
 				case "status_sales":
-					return salesStatusWeight(getCachedSalesStatus(a.id_producto)) - salesStatusWeight(getCachedSalesStatus(b.id_producto))
+					return salesStatusWeight(a.salesStatus) - salesStatusWeight(b.salesStatus)
 				case "status_margin":
-					return marginStatusWeight(resolveMarginStatus(a)) - marginStatusWeight(resolveMarginStatus(b))
+					return marginStatusWeight(a.marginStatus) - marginStatusWeight(b.marginStatus)
 				case "recent":
 				default:
-					return b.id_producto - a.id_producto
+					return b.producto.id_producto - a.producto.id_producto
 			}
 		})
 
-		return sorted
-	}, [productos, normalizedSearch, filters, getCachedSalesStatus, salesQueriesVersion])
+		return sorted.map((entry) => entry.producto)
+	}, [indexedProducts, normalizedSearch, filters])
 
 	const totalPages = useMemo(() => {
 		return Math.max(1, Math.ceil(filteredProducts.length / pageSize))
@@ -1299,6 +1315,7 @@ export default function ProductsPage() {
 		}
 		setImportSubmitting(false)
 		queryClient.invalidateQueries({ queryKey: ["productos"] })
+		queryClient.invalidateQueries({ queryKey: ["productos-catalogo"] })
 		setImportError(
 			failed > 0
 				? `Importación finalizada. ${success} productos guardados, ${failed} con errores.`
@@ -1470,13 +1487,46 @@ export default function ProductsPage() {
 							</tr>
 						</thead>
 						<tbody className="divide-y divide-slate-200">
-							{displayedProducts.map((producto) => {
-								const stockStatus = resolveProductStockStatus(producto)
-								const stockStatusText = productStockStatusLabel(stockStatus)
-								const inferred = inferCategoryFromCode(producto.codigo_producto)
-								const purchaseDisplay = producto.precio_compra > 0 ? currency.format(producto.precio_compra) : "—"
-								const margin = computeMargin(producto.precio_compra, producto.precio_venta)
-								const stockStatusClass =
+								{productosQuery.isLoading && productosQuery.data === undefined
+									? Array.from({ length: Math.min(pageSize, 8) }).map((_, index) => (
+										<tr key={`productos-skeleton-${index}`} className="animate-pulse">
+											<td className="py-3 pr-4 align-top">
+												<div className="flex flex-wrap items-center gap-2">
+													<div className="h-6 w-24 rounded-full bg-slate-100" />
+													<div className="h-6 w-12 rounded-full bg-slate-100" />
+												</div>
+											</td>
+											<td className="py-3 pr-4 align-top">
+												<div className="h-4 w-48 rounded bg-slate-100" />
+												<div className="mt-2 h-3 w-64 rounded bg-slate-100" />
+											</td>
+											<td className="py-3 pr-4 align-top">
+												<div className="h-4 w-32 rounded bg-slate-100" />
+											</td>
+											<td className="py-3 pr-4 align-top">
+												<div className="h-3 w-40 rounded bg-slate-100" />
+												<div className="mt-2 h-3 w-52 rounded bg-slate-100" />
+												<div className="mt-2 h-3 w-36 rounded bg-slate-100" />
+											</td>
+											<td className="py-3 pr-4 align-top">
+												<div className="h-6 w-24 rounded-full bg-slate-100" />
+											</td>
+											<td className="py-3 pr-4 align-top">
+												<div className="h-10 w-20 rounded-xl bg-slate-100" />
+											</td>
+											<td className="py-3 pr-4 align-top text-right">
+												<div className="ml-auto h-10 w-10 rounded-xl bg-slate-100" />
+											</td>
+										</tr>
+									))
+									: displayedProducts.map((producto) => {
+										const stockStatus = resolveProductStockStatus(producto)
+										const stockStatusText = productStockStatusLabel(stockStatus)
+										const inferred = inferCategoryFromCode(producto.codigo_producto)
+										const costo = producto.costo ?? (producto.precio_compra > 0 ? producto.precio_compra : null)
+										const purchaseDisplay = costo === null ? "—" : currency.format(costo)
+										const margin = producto.margen ?? (costo === null ? null : computeMargin(costo, producto.precio_venta))
+										const stockStatusClass =
 									stockStatus === "SIN_STOCK"
 										? "bg-slate-100 text-slate-700"
 										: stockStatus === "CRITICAL"
@@ -1505,13 +1555,13 @@ export default function ProductsPage() {
 											{producto.descripcion && <p className="mt-1 line-clamp-1 text-xs text-slate-500">{producto.descripcion}</p>}
 										</td>
 										<td className="py-3 pr-4 align-top text-sm font-semibold text-slate-900">
-											{producto.proveedor?.nombre_proveedor ?? "Sin proveedor"}
+											{producto.proveedor_nombre ?? producto.proveedor?.nombre_proveedor ?? "Sin proveedor"}
 										</td>
 										<td className="py-3 pr-4 align-top">
 											<p className="text-xs font-semibold text-slate-900">Venta: {currency.format(producto.precio_venta)}</p>
 											<p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
 												<span>Compra: {purchaseDisplay}</span>
-												{producto.precio_compra > 0 ? null : (
+												{costo !== null ? null : (
 													<span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700">
 														Sin costo
 													</span>

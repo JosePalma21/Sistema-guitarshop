@@ -4,11 +4,7 @@ import { useState } from "react"
 import { Drawer, DrawerContent, DrawerDescription, DrawerHeader, DrawerTitle } from "../../../components/ui/drawer"
 import type { VentaDetailRecord } from "../../../services/salesService"
 import { formatMoneyOrDash } from "../../../utils/number"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../../components/ui/dialog"
-import { SaleInvoiceDocument } from "./SaleInvoiceDocument"
-import { SaleInvoicePreview } from "./SaleInvoicePreview"
-import { PrintRootPortal } from "./PrintRootPortal"
-import { downloadSalePdf } from "../utils/salePdf"
+import { SaleInvoiceAutoPrint } from "./SaleInvoiceAutoPrint"
 
 type Props = {
 	open: boolean
@@ -31,20 +27,8 @@ type Props = {
 }
 
 export function SalesDetailDrawer(props: Props) {
-  const [invoiceOpen, setInvoiceOpen] = useState(false)
+	const [autoPrintEnabled, setAutoPrintEnabled] = useState(false)
 	const sale = props.sale
-  const emailSale = (venta: VentaDetailRecord) => {
-    const subject = `Factura ${venta.numero_factura || ""}`
-    const clienteNombre = venta.cliente ? `${venta.cliente.nombres} ${venta.cliente.apellidos}` : "Cliente"
-    const body = [
-      `Estimado/a ${clienteNombre},`,
-      "\nAdjunto la factura.",
-      venta.fecha_factura ? `\nFecha: ${new Date(venta.fecha_factura).toLocaleString("es-EC")}` : "",
-      `\nTotal: $${Number(venta.total ?? 0).toFixed(2)}`,
-      "\n\nGracias por su compra."
-    ].join("")
-    window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
-  }
 
 	return (
 		<Drawer open={props.open} onOpenChange={props.onOpenChange}>
@@ -205,9 +189,7 @@ export function SalesDetailDrawer(props: Props) {
 								</div>
 
 								<div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-									<button type="button" onClick={() => setInvoiceOpen(true)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Imprimir / Exportar</button>
-									<button type="button" onClick={async () => await downloadSalePdf(sale)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Descargar PDF</button>
-									<button type="button" onClick={() => emailSale(sale)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Enviar por correo</button>
+									<button type="button" onClick={() => setAutoPrintEnabled(true)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50">Imprimir</button>
 								</div>
 
 								{sale.credito && (
@@ -231,31 +213,14 @@ export function SalesDetailDrawer(props: Props) {
 			</DrawerContent>
 
 			{sale && (
-				<Dialog open={invoiceOpen} onOpenChange={setInvoiceOpen}>
-					<DialogContent className="dialog-content w-full max-w-4xl max-h-[90vh] overflow-y-auto" hideCloseButton>
-						<DialogHeader className="no-print">
-							<DialogTitle>Factura de venta</DialogTitle>
-							<DialogDescription className="sr-only">Vista de factura para impresión</DialogDescription>
-						</DialogHeader>
-						
-						{/* Renderizar en print-root para impresión */}
-						<PrintRootPortal>
-							<SaleInvoiceDocument sale={sale} />
-						</PrintRootPortal>
-
-						{/* Vista en pantalla (sin clase printable) */}
-						<div className="overflow-x-auto">
-							<SaleInvoicePreview sale={sale} />
-						</div>
-
-						<div className="mt-4 flex flex-wrap items-center justify-end gap-2 no-print">
-							<button type="button" onClick={() => { const count = document.querySelectorAll('.printable-invoice').length; console.log('printable count', count); if (count !== 1) { console.error('Error: printable-invoice duplicado', count); return; } requestAnimationFrame(() => { requestAnimationFrame(() => { window.print(); }); }); }} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Imprimir</button>
-							<button type="button" onClick={async () => await downloadSalePdf(sale)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Descargar PDF</button>
-							<button type="button" onClick={() => emailSale(sale)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">Enviar por correo</button>
-							<button type="button" onClick={() => setInvoiceOpen(false)} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">Cerrar</button>
-						</div>
-					</DialogContent>
-				</Dialog>
+					<SaleInvoiceAutoPrint
+						enabled={autoPrintEnabled}
+						sale={sale}
+						onDone={() => {
+							setAutoPrintEnabled(false)
+							props.onClose()
+						}}
+					/>
 			)}
 		</Drawer>
 	)
