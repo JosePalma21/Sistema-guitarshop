@@ -12,16 +12,6 @@ type Props = {
   disabled?: boolean
 }
 
-function matchesCliente(c: ClienteOption, q: string) {
-  const value = q.trim().toLowerCase()
-  if (!value) return false
-  return (
-    c.nombres.toLowerCase().includes(value) ||
-    c.apellidos.toLowerCase().includes(value) ||
-    c.cedula.toLowerCase().includes(value)
-  )
-}
-
 export function SaleClientAutocomplete({
   clientes,
   onSelectCliente,

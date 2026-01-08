@@ -11,12 +11,6 @@ type Props = {
   disabled?: boolean
 }
 
-function matchesProduct(p: ProductoOption, q: string) {
-  const value = q.trim().toLowerCase()
-  if (!value) return false
-  return p.codigo_producto.toLowerCase().includes(value) || p.nombre_producto.toLowerCase().includes(value)
-}
-
 export function SaleSearchBar({ productos, onAddProduct, disabled }: Props) {
   const [query, setQuery] = useState("")
   const [open, setOpen] = useState(false)
