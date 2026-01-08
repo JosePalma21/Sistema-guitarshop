@@ -70,7 +70,7 @@ onClick={() => props.onRemoveChip(chip.key)}
 className="rounded-full px-1 text-slate-500 hover:text-slate-900"
 aria-label="Remover filtro"
 >
-
+								×
 </button>
 </span>
 ))}
@@ -86,3 +86,4 @@ Limpiar todo
 </div>
 )
 }
+

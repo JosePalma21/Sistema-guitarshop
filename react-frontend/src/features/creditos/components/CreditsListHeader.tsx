@@ -22,7 +22,7 @@ type Props = {
 	onRemoveChip: (key: CreditsFilterChip["key"]) => void
 	onClearAllFilters: () => void
 
-	searchInputRef?: RefObject<HTMLInputElement>
+	searchInputRef?: RefObject<HTMLInputElement | null>
 }
 
 export function CreditsListHeader(props: Props) {
