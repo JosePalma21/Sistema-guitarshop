@@ -111,6 +111,9 @@ Por defecto se ejecutará en:
 
 cd ../react-frontend
 
+> Nota: el frontend incluye funcionalidades de exportación (Excel/PDF) y usa `xlsx`, `jspdf` y `jspdf-autotable`.
+> Ya están declaradas en `react-frontend/package.json`, así que basta con `npm install`.
+
 ### 1️⃣ Variables de entorno del frontend
 
 Copia `.env.example` a `.env` y deja:

@@ -44,6 +44,13 @@ const facturaDetalleSelect = {
         select: {
           codigo_producto: true,
           nombre_producto: true,
+          id_proveedor: true,
+          proveedor: {
+            select: {
+              id_proveedor: true,
+              nombre_proveedor: true,
+            },
+          },
         },
       },
     },
