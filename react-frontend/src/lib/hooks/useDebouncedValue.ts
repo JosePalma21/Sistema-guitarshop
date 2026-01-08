@@ -6,7 +6,7 @@ export const useDebouncedValue = <T>(value: T, delay = 250) => {
 	useEffect(() => {
 		const handler = window.setTimeout(() => {
 			startTransition(() => {
-				setDebounced(value)
+				setDebounced((prev) => (Object.is(prev, value) ? prev : value))
 			})
 		}, delay)
 		return () => window.clearTimeout(handler)

@@ -1,12 +1,11 @@
 "use client"
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "../../../components/ui/dialog"
-import { Printer, Download, Mail, X } from "lucide-react"
+import { Printer, X } from "lucide-react"
 import { useState, useEffect } from "react"
-import { SaleInvoiceDocument } from "./SaleInvoiceDocument"
+import { InvoicePrint } from "./InvoicePrint"
 import { SaleInvoicePreview } from "./SaleInvoicePreview"
 import { PrintRootPortal } from "./PrintRootPortal"
-import { downloadSalePdf } from "../utils/salePdf"
 import { salesService, type VentaDetailRecord } from "../../../services/salesService"
 
 type Props = {
@@ -48,7 +47,7 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
   }, [open, saleId])
 
   const handlePrint = () => {
-    const count = document.querySelectorAll(".printable-invoice").length
+    const count = document.querySelectorAll("#invoice-print .printable-invoice").length
     console.log("printable count", count)
     if (count !== 1) {
       console.error("Error: printable-invoice duplicado", count)
@@ -59,22 +58,6 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
         window.print()
       })
     })
-  }
-
-  const handleDownloadPdf = async () => {
-    if (sale) {
-      await downloadSalePdf(sale)
-    }
-  }
-
-  const handleEmail = () => {
-    if (!sale) return
-    
-    const subject = encodeURIComponent(`Factura #${sale.numero_factura}`)
-    const body = encodeURIComponent(
-      `Adjunto encontrarás la factura de tu compra.\n\nTotal: Bs ${sale.total}\nFecha: ${new Date(sale.fecha_factura).toLocaleDateString()}`
-    )
-    window.location.href = `mailto:?subject=${subject}&body=${body}`
   }
 
   return (
@@ -111,7 +94,7 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
             <>
               {/* Renderizar en print-root para impresión */}
               <PrintRootPortal>
-                <SaleInvoiceDocument sale={sale} />
+                <InvoicePrint sale={sale} />
               </PrintRootPortal>
 
               {/* Vista en pantalla (sin clase printable) */}
@@ -127,22 +110,6 @@ export function SaleInvoiceDialog({ saleId, open, onClose }: Props) {
                 >
                   <Printer className="h-4 w-4" />
                   Imprimir
-                </button>
-                <button
-                  type="button"
-                  onClick={handleDownloadPdf}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  <Download className="h-4 w-4" />
-                  Descargar PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={handleEmail}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  <Mail className="h-4 w-4" />
-                  Enviar por correo
                 </button>
               </div>
             </>

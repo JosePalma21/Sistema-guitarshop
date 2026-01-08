@@ -189,7 +189,7 @@ export default function ComprasPage() {
 
   // Catálogo resumido para poblar el selector de productos.
   const productosQuery = useQuery<ProductoOption[]>({
-    queryKey: ["productos"],
+    queryKey: ["productos-catalogo"],
     enabled: isAdmin,
     queryFn: async () => {
       const { data } = await api.get<ProductoOption[]>("/producto")

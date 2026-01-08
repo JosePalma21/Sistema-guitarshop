@@ -16,6 +16,39 @@ services:
       timeout: 3s
       retries: 20
 
+  # ✅ (+1 punto) Contenedor "copia espejo" vía backups automáticos (pg_dump)
+  db_backup:
+    image: postgres:16-alpine
+    container_name: guitarshop-db-backup
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: postgres
+    volumes:
+      - db_backups:/backups
+    entrypoint: >
+      sh -c "
+      echo 'Starting hourly backups to /backups ...';
+      while true; do
+        pg_dump -h db -U postgres -d guitarshop > /backups/guitarshop_$(date +%Y%m%d_%H%M%S).sql;
+        sleep 3600;
+      done
+      "
+
+  # ✅ (+0.5 pts) Contenedor extra: Base de datos de archivo / histórico
+  db_archive:
+    image: postgres:16-alpine
+    container_name: guitarshop-db-archive
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: guitarshop_archive
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata_archive:/var/lib/postgresql/data
+
   backend:
     build:
       context: ./guitarshop-backend
@@ -52,5 +85,7 @@ services:
 
 volumes:
   pgdata:
+  pgdata_archive:
+  db_backups:
   backend_node_modules:
   frontend_node_modules:

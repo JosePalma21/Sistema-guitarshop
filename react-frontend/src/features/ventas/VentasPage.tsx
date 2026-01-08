@@ -159,7 +159,7 @@ export default function VentasPage() {
 
   // Inventario resumido para autocompletar cada detalle.
   const productosQuery = useQuery<ProductoOption[]>({
-    queryKey: ["productos"],
+    queryKey: ["productos-catalogo"],
     enabled: isAdmin,
     queryFn: async () => {
       const data = await httpRequest<unknown>("/producto")

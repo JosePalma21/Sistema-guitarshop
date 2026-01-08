@@ -10,11 +10,11 @@ export function PrintRootPortal({ children }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
-    let root = document.getElementById("print-root")
+    let root = document.getElementById("invoice-print")
     
     if (!root) {
       root = document.createElement("div")
-      root.id = "print-root"
+      root.id = "invoice-print"
       document.body.appendChild(root)
     }
 
